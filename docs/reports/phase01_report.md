@@ -16,11 +16,12 @@
 - APK 署名確認: 合格（`apksigner verify -v D:\code_workspace\CursedBlood\CursedBlood.apk`）
 - 実機インストール: 合格（`adb install -r D:\code_workspace\CursedBlood\CursedBlood.apk`）
 - 実機起動: 合格（`adb shell am start -n com.example.cursedblood/com.godot.game.GodotAppLauncher`）
+- 実機向き確認: 合格（clean reinstall 後の `dumpsys activity activities` で `requestedOrientation=SCREEN_ORIENTATION_PORTRAIT` を確認）
 
 **【UI確認結果】** 実機起動までは確認したが、スクリーンショット取得と目視確認は未実施。コード上では HUD を y:0〜200、下部 UI を y:1600〜1920 に固定し、フィールドは 16x16 セルの 67x87 表示に合わせている。実機での視認性、カメラ追従、DeathScreen 表示は別途画面確認が必要。
 
 **【ビルド・EXE更新状況】** `dotnet build` は成功し、生成物 `D:\code_workspace\CursedBlood\.godot\mono\temp\bin\Debug\CursedBlood.dll` の更新を確認した。Android 向けには `D:\code_workspace\CursedBlood\CursedBlood.apk` を再生成し、更新時刻 `2026/03/09 14:38:02`、サイズ `95664925 bytes`、`apksigner verify -v` 合格を確認した。export 時には `No project icon specified` が表示されるため、今後は project icon 設定を入れる余地がある。
 
-**【既知の課題・注意事項】** Phase 2〜9 のコードはリポジトリ内に残しているが、修正指示に従って `CursedBlood.csproj` から除外しているため現行ビルドでは動作しない。斜め移動時の掘削感、石/硬岩での体感速度、HUD と DeathScreen の最終見た目は実ランタイムでの確認が必要。UI スクリーンショットは未取得。Android export を通すには `project.godot` の `textures/vram_compression/import_etc2_astc=true`、`CursedBlood.csproj` の Android 条件 `TargetFramework=net9.0`、`export_presets.cfg` の `package/signed=true` が必要だった。
+**【既知の課題・注意事項】** Phase 2〜9 のコードはリポジトリ内に残しているが、修正指示に従って `CursedBlood.csproj` から除外しているため現行ビルドでは動作しない。斜め移動時の掘削感、石/硬岩での体感速度、HUD と DeathScreen の最終見た目は実ランタイムでの確認が必要。UI スクリーンショットは未取得。Android export を通すには `project.godot` の `textures/vram_compression/import_etc2_astc=true`、`CursedBlood.csproj` の Android 条件 `TargetFramework=net9.0`、`export_presets.cfg` の `package/signed=true` が必要だった。加えて、`window/handheld/orientation` は文字列 `"portrait"` ではなく整数 enum `1` で保存しないと、Android exporter が `landscape` と解釈する。
 
 **【次のステップ（提案）】** 実機で Phase 1 の操作感と表示を目視確認し、project icon を設定して export warning を解消する。その後は docs の順に Phase 2 以降を再統合していく。

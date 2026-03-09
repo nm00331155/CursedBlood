@@ -18,6 +18,7 @@
 - APK 署名確認: `apksigner verify -v CursedBlood.apk` で成功（v2 署名あり）
 - 実機インストール: `adb install -r CursedBlood.apk` で成功
 - 実機起動: `adb shell am start -n com.example.cursedblood/com.godot.game.GodotAppLauncher` で成功
+- 実機向き確認: clean reinstall 後の `dumpsys activity activities` で `requestedOrientation=SCREEN_ORIENTATION_PORTRAIT` を確認
 - UI スクリーンショット: 未取得
 
 ## 現行状態の注意点
@@ -26,6 +27,7 @@
 - Phase 2〜9 のコードは履歴として残るが、修正指示001対応のため `CursedBlood.csproj` から除外している
 - そのため、旧報告書にある「全 phase 実装済み」は現行ビルド状態としては成立しない
 - Android export では `project.godot` に `textures/vram_compression/import_etc2_astc=true`、`export_presets.cfg` に `package/signed=true` が必要だった
+- Android 向き設定は `project.godot` の `window/handheld/orientation` を文字列ではなく整数 enum `1` で保存しないと、export 時に `landscape` として解釈される
 
 ## 主要な残課題
 
