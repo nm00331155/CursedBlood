@@ -1,78 +1,87 @@
-# Phase 4: 世代継承＋リザルト＋遺品選択＋家系図
+# `docs/04_PHASE4_GENERATION.md`
+※ファイル名はそのままでもよいが、中身は全面再定義
+
+```md
+# Phase 4: 潜行記録＋リザルト＋記録閲覧＋セーブ統合
 
 ## 前提
 
-- 依存: Phase 3 完了済み
-- 参照: `docs/00_PROJECT_SPEC.md`, `docs/11_SAVE_SYSTEM.md`, `docs/12_SCREEN_FLOW.md`
+- 依存Phase:
+  - Phase 3
+- 参照:
+  - `docs/00_PROJECT_SPEC.md`
+  - `docs/11_SAVE_SYSTEM.md`
+  - `docs/12_SCREEN_FLOW.md`
 
 ## このPhaseのゴール
 
-死亡時に遺品（装備1つ）を選択し、ゴールドの30%を遺産として次世代に託す。家系図に各世代の記録が蓄積される。セーブシステムを統合し、永続データを管理する。
+旧仕様の「世代継承」「家系図」を廃止し、同一主人公の継続挑戦を前提とした
+**潜行記録システム** と **潜行結果画面** を完成させる。
+各潜行の成果・損失・借金変動・到達深度・使用装備を記録し、後から閲覧できるようにする。
 
 ## 完了条件チェックリスト
 
-- [ ] リザルト画面で「遺品選択」UIが表示される
-- [ ] 装備中4枠 + バッグ内から1つを遺品選択
-- [ ] 遺産としてゴールドの30%が次世代に引き継がれる
-- [ ] 次世代が遺品と遺産を持ってスタート
-- [ ] 世代番号インクリメント
-- [ ] 男女ランダム（色変化で表現）
-- [ ] 家系図に全世代の記録が蓄積
-- [ ] 名前はランダム生成（日本語風、男女別）
-- [ ] SaveManagerによる統合セーブが動作する
-- [ ] セーブデータの読み書き・バックアップ・リカバリーが機能する
-- [ ] アプリ終了時・世代交代時に自動保存
-- [ ] 家系図画面で過去の世代を閲覧可能
+### リザルト
+- [ ] 潜行終了時に結果画面が表示される
+- [ ] 成功帰還 / 回収ポイント帰還 / 救助失敗が区別される
+- [ ] 到達深度、持ち帰り額、ロスト額、回収費、借金増減が表示される
+- [ ] 借金返済画面に遷移する
 
-## 作成・変更するファイル
+### 潜行記録
+- [ ] 過去の潜行記録が保存される
+- [ ] 一覧表示できる
+- [ ] 深度・結果・収支・装備が見られる
+- [ ] 記録数が増えても問題なく扱える
 
-### 新規作成
+### 継続進行
+- [ ] 同一主人公として進行が継続する
+- [ ] 潜行回数がインクリメントされる
+- [ ] 所持金、借金、研究、装備が引き継がれる
 
-```
-Scripts/CursedBlood/Generation/
-  GenerationManager.cs
-  FamilyTree.cs
-  FamilyTreeUI.cs
-  NameGenerator.cs
-  InheritanceData.cs
-Scripts/CursedBlood/Save/
-  SaveManager.cs
-  SaveData.cs
-  SaveMigrator.cs
-```
+## 保存する記録
 
-### 変更
+各潜行ごとに:
+- 潜行回数
+- 日時
+- 到達深度
+- 成功帰還 / 救助失敗
+- 持ち帰り額
+- ロスト額
+- 回収費
+- 借金変動
+- 使用装備
+- スコア
+- 備考（時間切れ / 被弾 / 深層生物など）
 
-```
-Scripts/CursedBlood/UI/DeathScreen.cs
-Scripts/CursedBlood/Core/GameManager.cs
-Scripts/CursedBlood/Player/PlayerStats.cs
-Scripts/CursedBlood/UI/HUDManager.cs
-```
+## 作成ファイル
 
-## 詳細設計
-
-（NameGenerator, FamilyTree, GenerationManager, InheritanceData, DeathScreen変更の設計は旧版と同等。）
-
-### SaveManager統合
-
-このPhaseでSaveManager（`docs/11_SAVE_SYSTEM.md`参照）を実装する。
-
-各マネージャーは `LoadFrom()` / `ToSaveData()` パターンで SaveManager と連携する。
-
-**家系図の深度表示**: 全て メートル(m)単位。
-
-## 実装順序
-
-1. SaveData.cs + SaveMigrator.cs
-2. SaveManager.cs
-3. NameGenerator.cs
-4. InheritanceData.cs
-5. FamilyTree.cs（SaveManager連携）
-6. GenerationManager.cs
-7. PlayerStats.cs変更
-8. DeathScreen.cs変更（遺品選択UI + 「次へ」ボタン）
-9. FamilyTreeUI.cs
-10. GameManager.cs変更（SaveManager初期化 + 世代継承フロー + 画面遷移）
-11. HUDManager.cs変更
-12. 動作確認 → APKビルド
+```text
+Scripts/CursedBlood/
+  Generation/
+    DiveRecord.cs
+    DiveLog.cs
+    DiveLogUI.cs
+DiveRecord.cs
+単回潜行データ
+セーブ対象
+DiveLog.cs
+潜行記録一覧管理
+追加
+取得
+ソート
+フィルタ
+DiveLogUI.cs
+潜行記録一覧画面
+詳細画面
+並び替え
+実装順序
+DiveRecord.cs
+DiveLog.cs
+ResultScreenとの連携
+SaveManager連携
+DiveLogUI.cs
+画面遷移統合
+注意事項
+旧仕様の家系図・次世代継承前提を残さない
+同一主人公の挑戦履歴として整理する
+借金ゲームの記録として、損失や回収費も見えるようにする

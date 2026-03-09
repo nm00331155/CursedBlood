@@ -7,28 +7,4 @@
     <RootNamespace>CursedBlood</RootNamespace>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="Scripts/CursedBlood/Achievement/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Audio/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Config/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Curse/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Debt/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Effects/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Enemy/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Equipment/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Generation/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Skill/**/*.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/CellData.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/GridGenerationContext.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/GridGenerator.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/GridManager.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/JsonStorage.cs" />
-    <Compile Remove="Scripts/CursedBlood/Core/ThemeSettings.cs" />
-    <Compile Remove="Scripts/CursedBlood/UI/EndingUI.cs" />
-    <Compile Remove="Scripts/CursedBlood/UI/PauseMenu.cs" />
-    <Compile Remove="Scripts/CursedBlood/UI/SettingsUI.cs" />
-    <Compile Remove="Scripts/CursedBlood/UI/TitleScreen.cs" />
-    <Compile Remove="Scripts/CursedBlood/UI/TutorialOverlay.cs" />
-  </ItemGroup>
 </Project>

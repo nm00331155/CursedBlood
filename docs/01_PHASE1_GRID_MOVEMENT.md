@@ -1,454 +1,396 @@
-# Phase 1: 小ブロックグリッド＋8方向移動＋掘削幅＋タイマー＋リスタート
+# `docs/01_PHASE1_GRID_MOVEMENT.md`
+
+```md
+# Phase 1: 小ブロックグリッド＋8方向移動＋掘削幅＋潜行タイマー＋帰還/救助
 
 ## 前提
 
-- 依存Phase: なし（最初に実装）
-- 参照: `docs/00_PROJECT_SPEC.md`
+- 依存Phase: なし
+- 参照:
+  - `docs/00_PROJECT_SPEC.md`
 
 ## このPhaseのゴール
 
-16×16pxの小ブロックグリッド上をプレイヤーが8方向に移動し、掘削幅に応じたトンネルを掘りながら深度を進む。60秒の寿命タイマーで死亡し、リザルト画面からリスタートできる最小プレイアブル。「砂の壁を掘り進む」感覚を実現する。
+16×16pxの小ブロックグリッド上をプレイヤーが8方向に移動し、掘削幅に応じたトンネルを掘りながら地下を進む。
+60秒の潜行制限の中で資源を回収し、地上に自力帰還するか、ランダム発生する回収ポイントを利用して報酬を確保する。
+時間切れや行動不能時は救助扱いとなり、報酬ロストと回収費が発生する。
+
+また、探索補助として簡易ソナーを導入し、近くに「何か」があることを距離に応じて察知できるようにする。
+「危険な坑道で短時間だけ稼ぎ、持ち帰る」感覚を実現する。
 
 ## 完了条件チェックリスト
 
 ### グリッド
 - [ ] 67列×87行の小ブロックグリッドが画面に表示される（y:200〜1600、セルサイズ16×16px）
-- [ ] 土ブロック（茶色）、石ブロック（灰色）、硬岩ブロック（暗灰色）、破壊不能（黒）、空洞（暗色）が色で区別できる
+- [ ] 土、石、硬岩、破壊不能、空洞が色で区別できる
 - [ ] チャンク管理（16行/チャンク）でメモリ効率的に運用される
-- [ ] セルデータがbyte配列で管理される（クラスインスタンスではない）
+- [ ] セルデータがbyte配列で管理される
 - [ ] 画面外チャンクが自動破棄される
-- [ ] 深度に応じてブロック種別の出現率が変化する
+- [ ] 深度に応じてブロック出現率が変化する
 
 ### 移動
-- [ ] プレイヤー（5×5セル=80×80pxの仮ビジュアル）がグリッド上に表示される
-- [ ] 矢印キーで8方向に移動できる（同時押しで斜め）
-- [ ] スワイプ（マウスドラッグ/タッチ）で8方向の方向指定ができる（自由角度→最近接8方向にスナップ）
-- [ ] 一度方向を指定すると、次の入力まで自動で同方向に進み続ける
-- [ ] 移動速度が0.02秒/セル（50セル/秒）で滑らかに移動する
-- [ ] 先行入力バッファが機能する
+- [ ] プレイヤー（5×5セル=80×80px）がグリッド上に表示される
+- [ ] 矢印キーで8方向移動できる（同時押しで斜め）
+- [ ] スワイプ / バーチャルパッドで8方向方向指定できる
+- [ ] 一度方向指定すると次の入力まで自動で進み続ける
+- [ ] 移動速度が0.02秒/セル基準で滑らかに動作する
+- [ ] 先行入力バッファがある
+- [ ] Guardで移動停止できる
+
+### バーチャルパッド
+- [ ] タップ位置に動的表示される
+- [ ] 指を離すと消える
+- [ ] 8方向入力できる
+- [ ] 透過率を調整可能
+- [ ] 長時間操作しても入力起点がズレにくい
 
 ### 掘削
-- [ ] 進行方向に対して掘削幅分（Phase 1では固定幅5）のセルが同時に破壊される
-- [ ] 土ブロックは即座に破壊（速度低下なし）
-- [ ] 石ブロックは通過速度が1/2に低下
-- [ ] 硬岩ブロックは通過速度が1/4に低下
-- [ ] 破壊不能ブロックは通れない（方向が変わらず停止）
-- [ ] 掘削時にブロックが消えるアニメーション（色が薄くなって消える簡易演出）
-- [ ] プレイヤーの占有範囲（5×5セル）が壁にめり込まない
+- [ ] 進行方向に対して幅5の面掘りができる
+- [ ] 土ブロックは即時掘削
+- [ ] 石ブロックでは移動/掘削が遅くなる
+- [ ] 硬岩ブロックではさらに大きく遅くなる
+- [ ] 破壊不能ブロックは通れない
+- [ ] 掘削時に簡易アニメーションやエフェクトがある
+- [ ] プレイヤー占有範囲（5×5）が壁にめり込まない
+- [ ] 進めない場合、その理由が視覚的またはデバッグ的に分かる
 
-### ガード
-- [ ] Space長押し/長押しでガード（移動停止）
+### 潜行制限
+- [ ] 60秒の潜行タイマーが動作する
+- [ ] 状態が Stable / Worn / Critical に変化する
+- [ ] 潜行開始直後が最も好調
+- [ ] 後半ほど移動/掘削性能が低下する
+- [ ] UIで酸素や危険状態が分かる
+
+### 帰還 / 救助
+- [ ] 地上に戻ると報酬100%確保
+- [ ] 回収ポイントに到達すると帰還選択できる
+- [ ] 回収ポイント帰還でも報酬100%確保
+- [ ] 時間切れまたは行動不能で救助扱いになる
+- [ ] 救助時に資源70%ロスト、アイテム70%ロスト、回収費請求が発生する
+- [ ] 支払えない分が借金へ加算される
+- [ ] 潜行結果画面に成功/救助/損失が表示される
+
+### 回収ポイント
+- [ ] 必ず到達可能な位置に発生する
+- [ ] 深い階層ほど出現率が低い
+- [ ] 序盤は30秒圏相当距離に最低1個保証される
+- [ ] 見つけたら帰還できる
+- [ ] 理不尽な位置に生成されない
+
+### ソナー
+- [ ] 近くに何かあると反応する
+- [ ] 遠距離では「何かある」だけわかる
+- [ ] 中距離では方向がなんとなくわかる
+- [ ] 近距離では方向が明確にわかる
+- [ ] 反応対象が敵・アイテム・回収ポイントなどで曖昧な状態を表現できる
 
 ### カメラ
-- [ ] プレイヤー移動に合わせてカメラが追従する（プレイヤーが画面中央）
-- [ ] カメラ追従が滑らか（Lerp補間）
+- [ ] プレイヤー追従
+- [ ] Lerp補間で滑らか
+- [ ] 掘削フィールド中心に見える
 
 ### HUD
-- [ ] HUDエリア（y:0〜200）に寿命バー、年齢テキスト、深度(m)が表示される
-- [ ] 下部エリア（y:1600〜1920）にHPが表示される
-- [ ] 60秒の寿命タイマーが動作する
-- [ ] 年齢表示が「X歳/35歳」で動的に更新される
-- [ ] 少年期/青年期/晩年期のフェーズ表示がある
-- [ ] 少年期は移動速度が遅く（×0.6）、プレイヤーサイズが3×3セル
-- [ ] 青年期で5×5セルに成長、速度ピーク
-- [ ] 晩年期は速度低下（×0.7）
+- [ ] HUDエリア（y:0〜200）に酸素バー、状態表示、深度、借金残高、未換金資源が表示される
+- [ ] 下部UI（y:1600〜1920）にHP、ソナー、操作補助情報が表示される
+- [ ] 60秒潜行タイマーが分かりやすい
+- [ ] 状態遷移が分かりやすい
 
-### 死亡・リスタート
-- [ ] 寿命が尽きると死亡し、リザルト画面が表示される
-- [ ] リザルト画面に世代、享年、最大深度(m)、スコアが表示される
-- [ ] リザルト画面タップ/クリック/キー押下でリスタート
-- [ ] リスタート時に世代番号がインクリメントされる
-- [ ] グリッドが完全にリセットされて再開される
+### 結果 / リスタート
+- [ ] 潜行終了時に結果画面が表示される
+- [ ] 到達深度、回収成功/救助、回収額、ロスト額、回収費、借金増減が表示される
+- [ ] タップ / クリック / キー押下で次の潜行へ進める
+- [ ] 潜行回数がインクリメントされる
+- [ ] グリッドが完全リセットされる
 
 ### パフォーマンス
 - [ ] PC上で60fps維持
-- [ ] 画面内セル総数（67×87≒5,829セル）の描画が滑らか
-- [ ] メモリ使用量がチャンク管理で安定している
+- [ ] 67×87セル描画が滑らか
+- [ ] チャンク管理でメモリが安定
+- [ ] 高速移動でもフレーム落ちしにくい
+- [ ] GCスパイクが体感できない
 
 ## 作成するファイル
 
 ### ディレクトリ構成
 
-```
+```text
 Scripts/CursedBlood/
   Core/
-    GameManager.cs           ← ゲームループ管理
-    ChunkManager.cs          ← チャンク生成・管理・破棄
-    ChunkData.cs             ← チャンクデータ（byte配列）
-    TerrainGenerator.cs      ← 地形生成ロジック
-    CellType.cs              ← セル種別enum定義
-    DigHelper.cs             ← 掘削幅・形状の計算
+    GameManager.cs
+    ChunkManager.cs
+    ChunkData.cs
+    TerrainGenerator.cs
+    CellType.cs
+    DigHelper.cs
+    RecoveryPointManager.cs
+    SonarSystem.cs
   Player/
-    PlayerController.cs      ← 入力処理・8方向移動・掘削実行
-    PlayerStats.cs           ← ステータス管理
+    PlayerController.cs
+    PlayerStats.cs
   Camera/
-    GameCamera.cs            ← カメラ追従（Lerp）
+    GameCamera.cs
   UI/
-    HUDManager.cs            ← HUD表示
-    DeathScreen.cs           ← 死亡画面
+    HUDManager.cs
+    ResultScreen.cs
+    VirtualPad.cs
 Scenes/CursedBlood/
-  CursedBloodMain.tscn       ← メインシーン
-```
-
-### CellType.cs
-
+  CursedBloodMain.tscn
+CellType.cs
 セル種別の定義。
 
-```
-namespace: CursedBlood.Core
-```
+Copynamespace: CursedBlood.Core
+CellType byte enum:
 
-**CellType byte enum**:
-- `Empty = 0` — 空洞（掘削済み）
-- `Dirt = 1` — 土ブロック（硬さ1.0、即破壊）
-- `Stone = 2` — 石ブロック（硬さ2.0、速度1/2）
-- `HardRock = 3` — 硬岩ブロック（硬さ4.0、速度1/4）
-- `Ore = 4` — 鉱石（Phase 2以降。定義のみ）
-- `Bedrock = 5` — 破壊不能
-- `Enemy = 6` — 敵占有セル（Phase 2以降。定義のみ）
-- `Boss = 7` — ボス占有セル（Phase 6以降。定義のみ）
+Empty = 0
+Dirt = 1
+Stone = 2
+HardRock = 3
+Ore = 4
+Bedrock = 5
+Enemy = 6
+Boss = 7
+RecoveryPoint = 8
+Item = 9
+CellTypeUtil static class:
 
-byte型にすることで1セル=1バイト。
-
-**CellTypeUtil static class**:
-- `float GetHardness(CellType type)` — 硬さ倍率を返す
-- `bool IsDiggable(CellType type)` — Bedrock以外はtrue
-- `Color GetColor(CellType type, int depthTier)` — 描画色を返す（深度帯0〜3で色変化）
-
-### ChunkData.cs
-
-チャンクのデータ管理。
-
-```
-namespace: CursedBlood.Core
+float GetHardness(CellType type)
+bool IsDiggable(CellType type)
+Color GetColor(CellType type, int depthTier)
+ChunkData.cs
+Copynamespace: CursedBlood.Core
 class ChunkData
-```
-
-- **定数**: `Width = 67`, `Height = 16`（16行で1チャンク）
-- `byte[] Cells` — Width × Height = 1,072 バイトの配列
-- `int ChunkIndex` — チャンク番号（0起点。チャンク0=行0〜15、チャンク1=行16〜31...）
-- `int StartRow` → ChunkIndex × Height
-- `byte GetCell(int localCol, int localRow)` — セル値取得
-- `void SetCell(int localCol, int localRow, byte value)` — セル値設定
-- `int ToIndex(int col, int row)` → row × Width + col
-
-### ChunkManager.cs
-
-チャンクの生成・保持・破棄を管理。Node2Dを継承。
-
-```
-namespace: CursedBlood.Core
-partial class ChunkManager : Node2D
-```
-
-**定数**:
-- `CellSize = 16` (px)
-- `ChunkHeight = 16` (行)
-- `Columns = 67`
-- `FieldOffsetX = 4f` — 左マージン（(1080 - 67×16) / 2 = 4）
-- `FieldOffsetY = 200f` — フィールド上端
-- `FieldWidth = 1072f` — 67 × 16
-- `FieldHeight = 1400f` — 87 × 16 ≒ 1392。フィールド高さ
-
-**フィールド**:
-- `Dictionary<int, ChunkData> _chunks` — チャンク番号→データ
-- `int _cameraTopRow` — カメラの最上行
-- `TerrainGenerator _generator`
-
-**メソッド**:
-
-`void Initialize()`:
-- 画面表示に必要なチャンク（87行÷16≒6チャンク）+ 上下バッファ各1チャンク = 8チャンクを生成
-- 最初の2チャンク（行0〜31）はプレイヤー開始エリアとして全セルEmpty
-
-`ChunkData GetChunk(int chunkIndex)`:
-- チャンクが存在しなければTerrainGeneratorで生成して格納
-
-`byte GetCell(int col, int absoluteRow)`:
-- col, rowからチャンクとローカル座標を算出してセル値を返す
-- `chunkIndex = absoluteRow / ChunkHeight`
-- `localRow = absoluteRow % ChunkHeight`
-
-`void SetCell(int col, int absoluteRow, byte value)`:
-- セル値を書き換え（掘削時に使用）
-
-`void UpdateCamera(int playerRow)`:
-- プレイヤーの行位置からカメラの最上行を算出（プレイヤーが画面中央になるよう）
-- `_cameraTopRow = playerRow - 43`（87行の半分）
-- 必要なチャンクを先読み生成
-- 画面外（上方向）のチャンクを破棄
-
-`Vector2 GridToScreen(int col, int row)`:
-- グリッド座標 → スクリーン座標変換
-- `x = FieldOffsetX + col * CellSize`
-- `y = FieldOffsetY + (row - _cameraTopRow) * CellSize`
-
-`void Reset()`:
-- 全チャンク破棄、初期化し直し
-
-**描画（_Draw）**:
-
-パフォーマンスのため、描画を最適化する。
-
-1. 表示範囲のチャンクのみ走査
-2. Emptyセルは描画スキップ（背景色で代替）
-3. 同一CellType の水平連続セルを1つの `DrawRect` にまとめる（バッチ描画）
-
-```csharp
-// 描画の疑似コード
-for each visible row:
-    CellType currentType = Empty;
-    int runStart = 0;
-    for col = 0 to Columns:
-        byte cell = GetCell(col, row);
-        if (cell != currentType || col == Columns):
-            if (currentType != Empty && runLength > 0):
-                DrawRect(batchedRect, GetColor(currentType));
-            currentType = cell;
-            runStart = col;
-```
-
-**背景**:
-- フィールド全体の背景色を暗色 `(0.08, 0.08, 0.1)` で塗る（_Draw先頭で1回のDrawRect）
-- Emptyセルは背景色のまま（描画しないことで高速化）
-
-### TerrainGenerator.cs
-
-地形生成。
-
-```
-namespace: CursedBlood.Core
+Width = 67
+Height = 16
+byte[] Cells
+int ChunkIndex
+int StartRow => ChunkIndex * Height
+byte GetCell(int localCol, int localRow)
+void SetCell(int localCol, int localRow, byte value)
+int ToIndex(int col, int row)
+TerrainGenerator.cs
+Copynamespace: CursedBlood.Core
 class TerrainGenerator
-```
-
-- `Random _rng`
-
-`void FillChunk(ChunkData chunk)`:
-- チャンク内の全セルを深度に応じた確率で埋める
-- パーリンノイズ風の分布で自然な地形を生成（高速化のためSimplexではなく、行ごとのシード値を使った簡易ノイズ）
-
-**深度別のブロック分布**:
-
-| 深度(m) | Dirt | Stone | HardRock | Bedrock | Empty |
-|---|---|---|---|---|---|
-| 0〜200 | 65% | 15% | 2% | 3% | 15% |
-| 200〜500 | 50% | 25% | 8% | 5% | 12% |
-| 500〜1000 | 35% | 30% | 15% | 8% | 12% |
-| 1000〜3000 | 20% | 35% | 25% | 10% | 10% |
-| 3000〜 | 10% | 30% | 35% | 15% | 10% |
-
-**地形パターン**:
-- 左右端の列（col 0〜2, 64〜66）は50%の確率でBedrock（壁を形成）
-- 10行に1回程度、横方向にBedrock帯（横断壁）を生成。ただし必ず幅10セル以上の開口部を設ける（デッドエンド防止）
-- 空洞は上下方向に連続しやすい（洞窟風）。乱数のシードを前行から引き継ぎ、空洞だった位置の近くは空洞になりやすくする
-
-**開口部保証**:
-- 各行で「横幅10セル以上の連続した掘削可能エリア」が存在することを保証する
-- 全列がBedrockの場合は中央付近20セルをDirtに置き換え
-
-### DigHelper.cs
-
-掘削範囲の計算ユーティリティ。
-
-```
-namespace: CursedBlood.Core
+役割
+深度に応じた地形生成
+開口保証
+到達可能性の担保
+回収ポイントの配置余地を壊さない生成
+深度別ブロック分布（目安）
+深度(m)	Dirt	Stone	HardRock	Bedrock	Empty
+0〜200	65%	15%	2%	3%	15%
+200〜500	50%	25%	8%	5%	12%
+500〜1000	35%	30%	15%	8%	12%
+1000〜3000	20%	35%	25%	10%	10%
+3000〜	10%	30%	35%	15%	10%
+ルール
+左右端は一部Bedrock
+横断Bedrock帯は作るが、必ず開口部を残す
+各行に最低限の掘削可能帯を保証
+開始付近は広めで理不尽な進行不能を避ける
+プレイヤー5×5が通れる余地を考慮
+開始エリア近辺は余裕を持たせる
+DigHelper.cs
+Copynamespace: CursedBlood.Core
 static class DigHelper
-```
-
-**掘削形状 enum**:
-```csharp
-public enum DigShape : byte { Square, Diamond, Fan }
-```
-
-`List<Vector2I> GetDigArea(Vector2I playerPos, Vector2I direction, int width, DigShape shape, int playerSize)`:
-- プレイヤー位置・進行方向・掘削幅・形状から、掘削すべきセル座標のリストを返す
-- Phase 1では `width=5, shape=Square, playerSize=5` 固定
-
-**Square形状の計算**（進行方向が(dx,dy)の場合）:
-```
-進行方向→(1,0)の場合:
-  プレイヤー中心(cx, cy)から、
-  掘削対象 = {(cx + 1, cy + offset) | offset = -width/2 ... +width/2}
-  ※プレイヤーの占有範囲(5×5)の前方1列 + 左右拡張分
-
-斜め方向→(1,1)の場合:
-  掘削対象 = {(cx + 1, cy + 1 + offset_x, offset_y) ...}
-  斜め方向に対して垂直方向に展開
-```
-
-実装上は、進行方向ベクトルとその法線ベクトルを使って一般化する:
-```csharp
-Vector2I forward = direction;
-Vector2I lateral; // 進行方向に垂直な方向
-if (forward == (1,0) || forward == (-1,0)):
-    lateral = (0, 1)
-elif (forward == (0,1) || forward == (0,-1)):
-    lateral = (1, 0)
-elif (forward == (1,1) || forward == (-1,-1)):
-    lateral = (1, -1)  // 正規化不要（グリッド上の隣接）
-elif (forward == (1,-1) || forward == (-1,1)):
-    lateral = (1, 1)
-```
-
-`void ExecuteDig(ChunkManager chunks, List<Vector2I> area)`:
-- 指定セル座標をすべてEmptyに書き換え
-- Bedrockは書き換えない
-
-### PlayerStats.cs
-
-プレイヤーのステータス。純粋なデータクラス。
-
-```
-namespace: CursedBlood.Player
+DigShape enum
+Copypublic enum DigShape : byte
+{
+    Square,
+    Diamond,
+    Fan
+}
+メソッド
+List<Vector2I> GetDigArea(Vector2I playerPos, Vector2I direction, int width, DigShape shape, int playerSize)
+void ExecuteDig(ChunkManager chunks, List<Vector2I> area)
+Phase 1
+width = 5
+shape = Square
+playerSize = 5
+RecoveryPointManager.cs
+Copynamespace: CursedBlood.Core
+partial class RecoveryPointManager : Node
+役割
+回収ポイント出現管理
+深度依存出現率
+序盤保証ポイント
+到達可能位置チェック
+既存ポイント管理
+仕様
+序盤は30秒圏相当距離に最低1個保証
+深いほど出現率低下
+完全運ゲー防止のため、長時間未出現なら補正可
+必ず到達可能かつ5×5で接近可能な位置にのみ配置
+回収ポイントは地形内で明確に見える必要がある
+SonarSystem.cs
+Copynamespace: CursedBlood.Core
+class SonarSystem
+役割
+周囲オブジェクト感知
+距離段階ごとの精度変化
+将来研究での強化前提
+最低限実装
+圏外: 無反応
+遠距離: 何かあり
+中距離: 方向ぼんやり
+近距離: 方向明確
+探知対象
+回収ポイント
+アイテム
+敵
+PlayerStats.cs
+Copynamespace: CursedBlood.Player
 class PlayerStats
-```
-
-**プロパティ**:
-- `float MaxLifespan = 60f`
-- `float CurrentAge`
-- `int MaxHp = 100`, `int CurrentHp`
-- `Vector2I GridPosition = (33, 8)` — 初期位置（中央列, 開始行付近）
-- `int PlayerSize` — 占有セルサイズ（少年期3, 青年期以降5）
-- `int MaxDepthPixels` — 到達最大Y座標（ピクセル）
-- `int MaxDepthMeters` → MaxDepthPixels / 16
-- `float BaseMoveInterval = 0.02f` — 秒/セル
-- `float DigPower = 10f`
-- `int DigWidth = 5` — 掘削幅（Phase 1は固定。Phase 3で装備依存に）
-- `DigShape DigShape = DigShape.Square` — 掘削形状
-- `int EnemiesKilled, MaxCombo, CurrentCombo, Gold`
-- `int Generation = 1`
-
-**算出プロパティ**:
-- `float HumanAge` — CurrentAge × 35 / MaxLifespan
-- `LifePhase Phase` — Youth(0〜20秒), Prime(21〜45秒), Twilight(46〜60秒)
-- `float PhaseMultiplier` — Youth=0.6, Prime=1.0, Twilight=0.7
-- `float EffectiveMoveInterval` — BaseMoveInterval / PhaseMultiplier
-- `bool IsAlive` — HP>0 かつ CurrentAge<MaxLifespan
-
-**フェーズ遷移時の処理**:
-- Youth→Prime: PlayerSize を 3→5 に変更（「成長」演出。周囲のセルを自動掘削して体が収まるようにする）
-- Prime→Twilight: PlayerSize は 5 のまま
-
-**メソッド**:
-- `void AdvanceTime(float delta)`
-- `void TakeDamage(int damage)`
-- `long CalculateScore()` — 最大深度(m) × Max(1,撃破数) × コンボ補正 × 世代ボーナス
-- `void Reset()`
-
-### PlayerController.cs
-
-入力処理と移動。Node2Dを継承。
-
-```
-namespace: CursedBlood.Player
+プロパティ
+float MaxDiveTime = 60f
+float CurrentDiveTime
+float OxygenRatio
+float FilterRatio
+int MaxHp = 100
+int CurrentHp
+Vector2I GridPosition = (33, 8)
+int PlayerSize = 5
+int MaxDepthPixels
+int DigWidth = 5
+DigShape DigShape = DigShape.Square
+int DiveCount = 1
+long CurrentDebt
+long SalvageValue
+List<ItemData> CollectedItems
+bool ReturnedSafely
+bool Rescued
+算出
+DivePhase Phase = Stable / Worn / Critical
+float PhaseMultiplier
+float EffectiveMoveInterval
+bool IsOperational
+フェーズ
+Stable（0〜20秒）
+Worn（21〜45秒）
+Critical（46〜60秒）
+メソッド
+void AdvanceTime(float delta)
+void TakeDamage(int damage)
+long CalculateScore()
+void ResetForNewDive()
+PlayerController.cs
+Copynamespace: CursedBlood.Player
 partial class PlayerController : Node2D
-```
-
-**外部参照**:
-- `ChunkManager Chunks`
-- `PlayerStats Stats`
-
-**8方向入力**:
-
-キーボード:
-```csharp
-Vector2I inputDir = Vector2I.Zero;
-if (Input.IsKeyPressed(Key.Up))    inputDir.Y -= 1;
-if (Input.IsKeyPressed(Key.Down))  inputDir.Y += 1;
-if (Input.IsKeyPressed(Key.Left))  inputDir.X -= 1;
-if (Input.IsKeyPressed(Key.Right)) inputDir.X += 1;
-// inputDirが(0,0)以外なら方向更新
-```
-
-スワイプ（8方向スナップ）:
-```csharp
-float angle = swipeDelta.Angle(); // ラジアン
-int octant = Mathf.RoundToInt(angle / (Mathf.Pi / 4)) % 8;
-// octant → 8方向のVector2Iにマッピング
-Vector2I[] directions = {
-    (1, 0),   // 0: 右
-    (1, 1),   // 1: 右下
-    (0, 1),   // 2: 下
-    (-1, 1),  // 3: 左下
-    (-1, 0),  // 4: 左
-    (-1, -1), // 5: 左上
-    (0, -1),  // 6: 上
-    (1, -1)   // 7: 右上
-};
-```
-
-**移動ロジック**:
-- 基本は旧仕様と同じ（タイマーベースのセル移動）だが、間隔が0.02秒と非常に短い
-- 移動先の全占有セル（PlayerSize × PlayerSize）がBedrock以外であることを確認
-- 移動と同時に掘削: `DigHelper.GetDigArea()` で掘削範囲を算出し、`DigHelper.ExecuteDig()` で実行
-- 硬いブロックがある場合: 掘削範囲内の最も硬いブロックの硬度で移動速度が決まる
-
-**壁衝突処理**:
-- 進行方向にBedrockがある場合、その方向には進まない
-- 自動移動は停止するが、方向は保持。プレイヤーが新しい方向を入力するまで待機
-
-**描画**:
-- プレイヤーを四角形で描画（PlayerSize × CellSize px）
-- フェーズ別色: Youth=緑, Prime=青, Twilight=オレンジ
-- 方向インジケーター（矢印線）
-- ガード中のシールド表示
-
-### GameCamera.cs
-
-カメラ追従。Camera2Dを継承。
-
-```
-namespace: CursedBlood.Camera
+責務
+8方向入力
+バーチャルパッド入力
+自動継続移動
+Guard
+掘削実行
+プレイヤー5×5占有チェック
+進行不能理由の検出
+要件
+キーボード同時押し斜め対応
+スワイプ8方向スナップ
+動的バーチャルパッド対応
+入力しやすさ重視
+前方掘削と移動可能判定が一致していること
+VirtualPad.cs
+Copynamespace: CursedBlood.UI
+partial class VirtualPad : Control
+役割
+タップ位置に動的表示
+8方向入力
+透過率調整
+調整項目
+BaseOpacity
+KnobOpacity
+DeadZoneRadius
+MaxRadius
+ChunkManager.cs
+Copynamespace: CursedBlood.Core
+partial class ChunkManager : Node2D
+定数
+CellSize = 16
+ChunkHeight = 16
+Columns = 67
+VisibleRows = 87
+FieldOffsetX = 4f
+FieldOffsetY = 200f
+役割
+チャンク生成 / 破棄
+セル読み書き
+描画
+カメラ連動可視範囲管理
+描画最適化
+Empty非描画
+水平runバッチ描画
+背景は1回描画
+GameCamera.cs
+Copynamespace: CursedBlood.Camera
 partial class GameCamera : Camera2D
-```
-
-- Lerp追従: `Position = Position.Lerp(targetPos, delta * 10f)` で滑らかに追従
-- targetPosはプレイヤーのワールド座標
-- カメラの上端がy=200、下端がy=1600に収まるようにクランプ
-- `void Shake(float, float)` — 将来の画面揺れ用スタブ
-
-**重要**: 旧仕様ではChunkManagerの_topVisibleRowでスクロールを管理していたが、新仕様ではカメラ自体を動かす方式に変更。ChunkManagerのGridToScreenはカメラのPositionを基準に計算する。
-
-### HUDManager.cs
-
-旧仕様と同じだが、深度表示が「深度 Xm」に変更。
-
-- 寿命バー、年齢テキスト、フェーズ表示、深度(m)、スコア、HP
-- CanvasLayerなのでカメラに追従しない
-
-### DeathScreen.cs
-
-旧仕様と同じ。深度表示が(m)単位に変更。
-
-### GameManager.cs
-
-旧仕様と基本同じだが、GridManager→ChunkManagerに変更。
-
-**_Ready()**:
-1. PlayerStats生成
-2. ChunkManager生成・AddChild
-3. PlayerController生成・Chunks/Statsセット・AddChild
-4. GameCamera生成・AddChild
-5. HUDManager生成・Initialize・AddChild
-6. DeathScreen生成・RestartRequested接続・AddChild
-
-**_Process(delta)**:
-- Playing中: AdvanceTime → フェーズ遷移チェック（Youth→Primeで成長処理）→ IsAlive判定
-- ChunkManager.UpdateCamera(playerRow) を毎フレーム呼ぶ
-
-### CursedBloodMain.tscn
-
-```
-[gd_scene format=3]
+プレイヤー追従
+Lerp補間
+HUDと下部UIを考慮
+HUDManager.cs
+Copynamespace: CursedBlood.UI
+partial class HUDManager : CanvasLayer
+表示内容
+酸素バー
+状態（Stable / Worn / Critical）
+深度
+借金残高
+未換金資源
+HP
+ソナー反応
+回収ポイント発見通知
+ResultScreen.cs
+Copynamespace: CursedBlood.UI
+partial class ResultScreen : CanvasLayer
+表示内容
+潜行回数
+到達深度
+回収成功 / 救助
+持ち帰り額
+ロスト額
+回収費
+借金増減
+スコア
+再出発入力
+GameManager.cs
+Copynamespace: CursedBlood.Core
+partial class GameManager : Node2D
+_Ready()
+PlayerStats生成
+ChunkManager生成
+RecoveryPointManager生成
+SonarSystem生成
+PlayerController生成
+GameCamera生成
+HUDManager生成
+ResultScreen生成
+_Process(delta)
+潜行時間進行
+状態フェーズ更新
+チャンク更新
+回収ポイント管理
+ソナー更新
+地上帰還判定
+回収ポイント帰還判定
+救助判定
+HUD更新
+救助処理
+資源70%ロスト
+アイテム70%ロスト
+回収費計算
+不足分借金加算
+結果画面表示
+帰還成功処理
+持ち帰り額100%
+借金返済反映
+結果画面表示
+CursedBloodMain.tscn
+Copy[gd_scene format=3]
 [ext_resource type="Script" path="res://Scripts/CursedBlood/Core/GameManager.cs" id="1"]
+
 [node name="CursedBloodMain" type="Node2D"]
 script = ExtResource("1")
-```
-
-### project.godot 変更
-
-```ini
-[application]
+project.godot 変更
+Copy[application]
 run/main_scene="res://Scenes/CursedBlood/CursedBloodMain.tscn"
 
 [display]
@@ -457,37 +399,37 @@ window/size/viewport_height=1920
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 window/handheld/orientation="portrait"
-```
-
-## 実装順序
-
-1. CellType.cs（1バイトenum、依存なし）
-2. ChunkData.cs（byte配列、依存なし）
-3. TerrainGenerator.cs（ChunkData依存）
-4. DigHelper.cs（CellType依存）
-5. ChunkManager.cs（ChunkData + TerrainGenerator + 描画）
-6. PlayerStats.cs（データクラス、依存なし）
-7. PlayerController.cs（ChunkManager + PlayerStats + DigHelper依存）
-8. GameCamera.cs（単独）
-9. HUDManager.cs（PlayerStats依存）
-10. DeathScreen.cs（シグナルのみ）
-11. GameManager.cs（全体結合）
-12. CursedBloodMain.tscn + project.godot
-13. dotnet build → 動作確認 → APKビルド
-
-## パフォーマンス確認ポイント
-
-- [ ] 67×87セルの全画面描画で60fps（バッチ描画の効果確認）
-- [ ] チャンク生成が1ms以内で完了する
-- [ ] 高速移動時（0.005秒/セル=200セル/秒）でもフレーム落ちしない
-- [ ] 深度10000m（62,500行）到達時にメモリ使用量が安定している（チャンク破棄が機能）
-- [ ] GCによるスパイクが体感できない
-
-## 注意事項
-
-- 旧コード（Scripts/Sample/, Scripts/Core/）は一切変更しない
-- 全クラスは `CursedBlood.*` namespace配下に作成
-- Godot 4.6.1 (.NET/C#) の partial class パターンを使用
-- _Draw() による仮ビジュアル描画。スプライトは後のPhaseで差し替え
-- CellDataクラスは廃止。byte配列 + CellTypeUtil静的メソッドで管理
-- テスト後、project.godot の main_scene は `res://Scenes/CursedBlood/CursedBloodMain.tscn` のままにする
+実装順序
+CellType.cs
+ChunkData.cs
+TerrainGenerator.cs
+DigHelper.cs
+RecoveryPointManager.cs
+SonarSystem.cs
+ChunkManager.cs
+PlayerStats.cs
+VirtualPad.cs
+PlayerController.cs
+GameCamera.cs
+HUDManager.cs
+ResultScreen.cs
+GameManager.cs
+CursedBloodMain.tscn
+project.godot
+dotnet build
+Godot起動確認
+必要ならAPKビルド
+パフォーマンス確認ポイント
+ 67×87描画で60fps
+ チャンク生成が軽い
+ 高速移動でも破綻しない
+ 回収ポイント生成が重くない
+ ソナー処理で重くならない
+ GCスパイクが目立たない
+注意事項
+旧コード（Scripts/Sample/, Scripts/Core/）は変更しない
+新コードは CursedBlood.* namespace 配下
+Godot 4.6.1 C# partial class パターン
+_Draw() による仮ビジュアル可
+まず仕様準拠と動作安定を優先
+旧仕様の年齢・世代・呪い要素は一切持ち込まない

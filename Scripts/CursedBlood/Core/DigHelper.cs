@@ -32,23 +32,29 @@ namespace CursedBlood.Core
                 shape = DigShape.Square;
             }
 
+            var effectiveWidth = Mathf.Max(width, playerSize);
             AddOccupancyDifference(buffer, playerPos, playerPos + direction, playerSize);
-            AddFrontWidth(buffer, playerPos, direction, width, playerSize);
+            AddFrontWidth(buffer, playerPos, direction, effectiveWidth, playerSize);
         }
 
         public static List<Vector2I> GetCenteredArea(Vector2I center, int size)
         {
             var result = new List<Vector2I>(size * size);
+            FillCenteredArea(result, center, size);
+            return result;
+        }
+
+        public static void FillCenteredArea(List<Vector2I> buffer, Vector2I center, int size)
+        {
+            buffer.Clear();
             var half = size / 2;
             for (var row = center.Y - half; row <= center.Y + half; row++)
             {
                 for (var col = center.X - half; col <= center.X + half; col++)
                 {
-                    result.Add(new Vector2I(col, row));
+                    buffer.Add(new Vector2I(col, row));
                 }
             }
-
-            return result;
         }
 
         public static int ExecuteDig(ChunkManager chunks, IReadOnlyList<Vector2I> area)
@@ -58,7 +64,7 @@ namespace CursedBlood.Core
             {
                 var cell = area[index];
                 var type = (CellType)chunks.GetCell(cell.X, cell.Y);
-                if (type == CellType.Empty || !CellTypeUtil.IsDiggable(type))
+                if (type == CellType.Empty || type == CellType.RecoveryPoint || type == CellType.Item || !CellTypeUtil.IsDiggable(type))
                 {
                     continue;
                 }
@@ -96,26 +102,36 @@ namespace CursedBlood.Core
         {
             var halfWidth = width / 2;
             var frontOffset = playerSize / 2 + 1;
+            var frontCenter = playerPos + new Vector2I(direction.X * frontOffset, direction.Y * frontOffset);
+            var lateral = GetLateralVector(direction);
 
+            for (var offset = -halfWidth; offset <= halfWidth; offset++)
+            {
+                var cell = new Vector2I(frontCenter.X + lateral.X * offset, frontCenter.Y + lateral.Y * offset);
+                AddUnique(buffer, cell);
+            }
+        }
+
+        private static Vector2I GetLateralVector(Vector2I direction)
+        {
             if (direction.X != 0 && direction.Y == 0)
             {
-                var frontCol = playerPos.X + direction.X * frontOffset;
-                for (var offset = -halfWidth; offset <= halfWidth; offset++)
-                {
-                    AddUnique(buffer, new Vector2I(frontCol, playerPos.Y + offset));
-                }
-
-                return;
+                return Vector2I.Down;
             }
 
             if (direction.Y != 0 && direction.X == 0)
             {
-                var frontRow = playerPos.Y + direction.Y * frontOffset;
-                for (var offset = -halfWidth; offset <= halfWidth; offset++)
-                {
-                    AddUnique(buffer, new Vector2I(playerPos.X + offset, frontRow));
-                }
+                return Vector2I.Right;
             }
+
+            return direction switch
+            {
+                { X: 1, Y: 1 } => new Vector2I(1, -1),
+                { X: -1, Y: -1 } => new Vector2I(1, -1),
+                { X: 1, Y: -1 } => new Vector2I(1, 1),
+                { X: -1, Y: 1 } => new Vector2I(1, 1),
+                _ => Vector2I.Right
+            };
         }
 
         private static void AddUnique(List<Vector2I> buffer, Vector2I cell)

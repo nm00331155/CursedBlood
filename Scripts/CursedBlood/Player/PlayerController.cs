@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using CursedBlood.Core;
+using CursedBlood.UI;
 using Godot;
 
 namespace CursedBlood.Player
@@ -7,11 +9,19 @@ namespace CursedBlood.Player
     public partial class PlayerController : Node2D
     {
         private const float GuardHoldSeconds = 0.18f;
+        private const float BlockFeedbackCooldownSeconds = 0.12f;
+        private const int MousePointerId = -1;
+        private const int NoPointerId = int.MinValue;
 
-        private readonly List<Vector2I> _digBuffer = new(24);
+        private readonly List<Vector2I> _digBuffer = new(32);
+        private readonly List<Vector2I> _occupancyBuffer = new(25);
+        private readonly MoveDebugInfo _moveDebugInfo = new();
+
         private Vector2I _moveDirection = Vector2I.Down;
         private Vector2I _bufferedDirection = Vector2I.Zero;
         private Vector2I _moveTargetGrid;
+        private Vector2I _lastBlockedCell = new(int.MinValue, int.MinValue);
+        private MoveBlockReason _lastBlockedReason = MoveBlockReason.None;
         private Vector2 _moveStartPosition;
         private Vector2 _moveEndPosition;
         private Vector2 _pointerStart;
@@ -22,21 +32,29 @@ namespace CursedBlood.Player
         private float _pointerHoldTime;
         private float _moveTimer;
         private float _currentMoveDuration;
+        private float _blockedFeedbackCooldown;
+        private int _activePointerId = NoPointerId;
         private int _lastPlayerSize;
-        private LifePhase _lastPhase;
-
-        [Export]
-        public float SwipeThreshold { get; set; } = 32f;
+        private DivePhase _lastPhase;
+        private string _movementStatusText = string.Empty;
 
         public ChunkManager Chunks { get; set; }
 
         public PlayerStats Stats { get; set; }
+
+        public VirtualPad VirtualPad { get; set; }
 
         public bool InputEnabled { get; set; } = true;
 
         public bool IsGuarding => Input.IsKeyPressed(Key.Space) || _touchGuarding;
 
         public Vector2I CurrentDirection => _moveDirection;
+
+        public MoveDebugInfo MoveDebugInfo => _moveDebugInfo;
+
+        public string MovementStatusText => _movementStatusText;
+
+        public event Action<long> SalvageCollected;
 
         public override void _Ready()
         {
@@ -45,8 +63,20 @@ namespace CursedBlood.Player
 
         public override void _Process(double delta)
         {
-            if (!InputEnabled || Stats == null || Chunks == null || !Stats.IsAlive)
+            if (_blockedFeedbackCooldown > 0f)
             {
+                _blockedFeedbackCooldown = Mathf.Max(0f, _blockedFeedbackCooldown - (float)delta);
+            }
+
+            if (Stats == null || Chunks == null)
+            {
+                ClearMoveProbe(Vector2I.Zero);
+                return;
+            }
+
+            if (!InputEnabled || !Stats.IsAlive)
+            {
+                ClearMoveProbe(Stats.GridPosition);
                 return;
             }
 
@@ -72,16 +102,16 @@ namespace CursedBlood.Player
             switch (@event)
             {
                 case InputEventScreenTouch screenTouch:
-                    HandlePointerPressed(screenTouch.Pressed, screenTouch.Position);
+                    HandlePointerPressed(screenTouch.Pressed, screenTouch.Position, screenTouch.Index);
                     break;
                 case InputEventMouseButton mouseButton when mouseButton.ButtonIndex == MouseButton.Left:
-                    HandlePointerPressed(mouseButton.Pressed, mouseButton.Position);
+                    HandlePointerPressed(mouseButton.Pressed, mouseButton.Position, MousePointerId);
                     break;
-                case InputEventScreenDrag screenDrag:
-                    DetectSwipe(screenDrag.Position);
+                case InputEventScreenDrag screenDrag when _pointerActive && screenDrag.Index == _activePointerId:
+                    HandlePointerDragged(screenDrag.Position);
                     break;
-                case InputEventMouseMotion mouseMotion when _pointerActive:
-                    DetectSwipe(mouseMotion.Position);
+                case InputEventMouseMotion mouseMotion when _pointerActive && _activePointerId == MousePointerId:
+                    HandlePointerDragged(mouseMotion.Position);
                     break;
             }
         }
@@ -99,9 +129,9 @@ namespace CursedBlood.Player
 
             var bodyColor = Stats.Phase switch
             {
-                LifePhase.Youth => new Color(0.26f, 0.82f, 0.45f),
-                LifePhase.Prime => new Color(0.25f, 0.58f, 0.92f),
-                LifePhase.Twilight => new Color(0.93f, 0.55f, 0.20f),
+                DivePhase.Stable => new Color(0.26f, 0.82f, 0.45f),
+                DivePhase.Worn => new Color(0.92f, 0.69f, 0.20f),
+                DivePhase.Critical => new Color(0.92f, 0.34f, 0.26f),
                 _ => new Color(0.25f, 0.58f, 0.92f)
             };
 
@@ -127,15 +157,26 @@ namespace CursedBlood.Player
             _moveTargetGrid = Vector2I.Zero;
             _moveTimer = 0f;
             _currentMoveDuration = 0f;
+            _isMoving = false;
+            _blockedFeedbackCooldown = 0f;
+            _lastBlockedCell = new Vector2I(int.MinValue, int.MinValue);
+            _lastBlockedReason = MoveBlockReason.None;
+            _lastPlayerSize = Stats?.PlayerSize ?? 5;
+            _lastPhase = Stats?.Phase ?? DivePhase.Stable;
+            CancelTouchInput();
+            ClearMoveProbe(Stats?.GridPosition ?? Vector2I.Zero);
+            SyncToStatsPosition();
+            QueueRedraw();
+        }
+
+        public void CancelTouchInput()
+        {
             _pointerActive = false;
             _pointerMoved = false;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
-            _isMoving = false;
-            _lastPlayerSize = Stats?.PlayerSize ?? 3;
-            _lastPhase = Stats?.Phase ?? LifePhase.Youth;
-            SyncToStatsPosition();
-            QueueRedraw();
+            _activePointerId = NoPointerId;
+            VirtualPad?.End();
         }
 
         public void SyncToStatsPosition()
@@ -150,11 +191,34 @@ namespace CursedBlood.Player
             _moveEndPosition = Position;
             _isMoving = false;
             _moveTimer = 0f;
+            UpdateMoveProbe();
         }
 
         public Vector2 GetCurrentWorldPosition()
         {
             return GlobalPosition;
+        }
+
+        public string GetDebugSummary()
+        {
+            if (!_moveDebugInfo.HasTarget)
+            {
+                return "Debug[F3] Idle";
+            }
+
+            var targetLabel = CellTypeUtil.GetName(_moveDebugInfo.TargetCellType);
+            var slowLabel = _moveDebugInfo.MaxHardness > 1f
+                ? $"{CellTypeUtil.GetName(_moveDebugInfo.SlowestCellType)} x{_moveDebugInfo.MaxHardness:0.0}"
+                : "x1.0";
+
+            if (_moveDebugInfo.CanMove)
+            {
+                return $"Debug[F3] Dir {_moveDebugInfo.Direction} Target {_moveDebugInfo.Target} Cell {targetLabel} Slow {slowLabel} Open";
+            }
+
+            var blockType = _moveDebugInfo.HasBlockedCell ? CellTypeUtil.GetName(_moveDebugInfo.BlockedCellType) : "None";
+            var blockCell = _moveDebugInfo.HasBlockedCell ? _moveDebugInfo.BlockedCell.ToString() : "-";
+            return $"Debug[F3] Dir {_moveDebugInfo.Direction} Target {_moveDebugInfo.Target} Cell {targetLabel} Slow {slowLabel} {GetBlockReasonLabel(_moveDebugInfo.BlockReason)} {blockType} {blockCell}";
         }
 
         private void HandleKeyboardInput()
@@ -202,6 +266,8 @@ namespace CursedBlood.Player
 
         private void ProcessMovement(float delta)
         {
+            UpdateMoveProbe();
+
             if (_isMoving)
             {
                 _moveTimer += delta;
@@ -226,9 +292,81 @@ namespace CursedBlood.Player
                 _moveDirection = _bufferedDirection;
                 _bufferedDirection = Vector2I.Zero;
                 QueueRedraw();
+                UpdateMoveProbe();
             }
 
             TryStartMove();
+        }
+
+        private void UpdateMoveProbe()
+        {
+            if (Stats == null || Chunks == null)
+            {
+                ClearMoveProbe(Vector2I.Zero);
+                return;
+            }
+
+            var probeDirection = _isMoving && _bufferedDirection != Vector2I.Zero ? _bufferedDirection : _moveDirection;
+            EvaluateMove(probeDirection);
+        }
+
+        private void EvaluateMove(Vector2I direction)
+        {
+            _moveDebugInfo.Reset(Stats.GridPosition, direction);
+            _movementStatusText = string.Empty;
+
+            if (direction == Vector2I.Zero)
+            {
+                return;
+            }
+
+            var target = Stats.GridPosition + direction;
+            DigHelper.FillDigArea(_digBuffer, Stats.GridPosition, direction, Stats.DigWidth, Stats.DigShape, Stats.PlayerSize);
+            DigHelper.FillCenteredArea(_occupancyBuffer, target, Stats.PlayerSize);
+
+            _moveDebugInfo.SetDigArea(_digBuffer);
+            _moveDebugInfo.SetOccupancyArea(_occupancyBuffer);
+            _moveDebugInfo.SetTargetCellType((CellType)Chunks.GetCell(target.X, target.Y));
+
+            if (_digBuffer.Count == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < _digBuffer.Count; index++)
+            {
+                var cell = _digBuffer[index];
+                var type = (CellType)Chunks.GetCell(cell.X, cell.Y);
+
+                if (!CellTypeUtil.IsDiggable(type))
+                {
+                    _moveDebugInfo.Block(ResolveFrontBlockReason(cell), cell, type);
+                    _movementStatusText = BuildMovementStatus(_moveDebugInfo);
+                    return;
+                }
+
+                _moveDebugInfo.ConsiderHardness(type);
+            }
+
+            for (var index = 0; index < _occupancyBuffer.Count; index++)
+            {
+                var cell = _occupancyBuffer[index];
+                if (ContainsCell(_digBuffer, cell.X, cell.Y))
+                {
+                    continue;
+                }
+
+                var type = (CellType)Chunks.GetCell(cell.X, cell.Y);
+                if (!CellTypeUtil.IsDiggable(type))
+                {
+                    _moveDebugInfo.Block(ResolveOccupancyBlockReason(cell), cell, type);
+                    _movementStatusText = BuildMovementStatus(_moveDebugInfo);
+                    return;
+                }
+            }
+
+            _moveDebugInfo.AllowMove();
+            _movementStatusText = BuildMovementStatus(_moveDebugInfo);
         }
 
         private void RequestDirection(Vector2I direction)
@@ -258,30 +396,23 @@ namespace CursedBlood.Player
                 return false;
             }
 
-            DigHelper.FillDigArea(_digBuffer, Stats.GridPosition, _moveDirection, Stats.DigWidth, Stats.DigShape, Stats.PlayerSize);
-            if (_digBuffer.Count == 0)
+            if (_moveDebugInfo.Direction != _moveDirection || _moveDebugInfo.Origin != Stats.GridPosition)
             {
+                EvaluateMove(_moveDirection);
+            }
+
+            if (!_moveDebugInfo.CanMove)
+            {
+                EmitBlockedFeedback(_moveDebugInfo);
                 return false;
             }
 
-            var target = Stats.GridPosition + _moveDirection;
-            var maxHardness = 1f;
-
+            var salvageDelta = 0L;
             for (var index = 0; index < _digBuffer.Count; index++)
             {
-                var cell = _digBuffer[index];
-                var type = (CellType)Chunks.GetCell(cell.X, cell.Y);
-                if (!CellTypeUtil.IsDiggable(type))
-                {
-                    return false;
-                }
-
-                maxHardness = Mathf.Max(maxHardness, CellTypeUtil.GetHardness(type));
-            }
-
-            if (!CanOccupyAfterDig(target, Stats.PlayerSize, _digBuffer))
-            {
-                return false;
+                var digCell = _digBuffer[index];
+                var digType = (CellType)Chunks.GetCell(digCell.X, digCell.Y);
+                salvageDelta += Stats.RegisterLoot(digType, digCell.Y);
             }
 
             var dugCount = DigHelper.ExecuteDig(Chunks, _digBuffer);
@@ -290,11 +421,16 @@ namespace CursedBlood.Player
                 Stats.RegisterDig(dugCount);
             }
 
-            _moveTargetGrid = target;
+            if (salvageDelta > 0L)
+            {
+                SalvageCollected?.Invoke(salvageDelta);
+            }
+
+            _moveTargetGrid = Stats.GridPosition + _moveDirection;
             _moveStartPosition = Chunks.GridToWorldCenter(Stats.GridPosition.X, Stats.GridPosition.Y);
-            _moveEndPosition = Chunks.GridToWorldCenter(target.X, target.Y);
+            _moveEndPosition = Chunks.GridToWorldCenter(_moveTargetGrid.X, _moveTargetGrid.Y);
             _moveTimer = 0f;
-            _currentMoveDuration = Stats.EffectiveMoveInterval * maxHardness;
+            _currentMoveDuration = Stats.EffectiveMoveInterval * _moveDebugInfo.MaxHardness;
             _isMoving = true;
             return true;
         }
@@ -306,31 +442,38 @@ namespace CursedBlood.Player
             Stats.RegisterDepth(_moveTargetGrid.Y);
             Position = _moveEndPosition;
             Chunks.UpdateCamera(Stats.GridPosition.Y);
+            UpdateMoveProbe();
         }
 
-        private bool CanOccupyAfterDig(Vector2I center, int size, List<Vector2I> digArea)
+        private void EmitBlockedFeedback(MoveDebugInfo info)
         {
-            var half = size / 2;
-            for (var row = center.Y - half; row <= center.Y + half; row++)
+            if (!info.HasBlockedCell)
             {
-                for (var col = center.X - half; col <= center.X + half; col++)
-                {
-                    if (ContainsCell(digArea, col, row))
-                    {
-                        continue;
-                    }
-
-                    if ((CellType)Chunks.GetCell(col, row) == CellType.Bedrock)
-                    {
-                        return false;
-                    }
-                }
+                return;
             }
 
-            return true;
+            if (_blockedFeedbackCooldown > 0f && info.BlockedCell == _lastBlockedCell && info.BlockReason == _lastBlockedReason)
+            {
+                return;
+            }
+
+            Chunks.FlashBlockedCell(info.BlockedCell, info.BlockReason);
+            _blockedFeedbackCooldown = BlockFeedbackCooldownSeconds;
+            _lastBlockedCell = info.BlockedCell;
+            _lastBlockedReason = info.BlockReason;
         }
 
-        private static bool ContainsCell(List<Vector2I> cells, int col, int row)
+        private MoveBlockReason ResolveFrontBlockReason(Vector2I cell)
+        {
+            return Chunks.IsInBounds(cell.X, cell.Y) ? MoveBlockReason.Bedrock : MoveBlockReason.OutOfBounds;
+        }
+
+        private MoveBlockReason ResolveOccupancyBlockReason(Vector2I cell)
+        {
+            return Chunks.IsInBounds(cell.X, cell.Y) ? MoveBlockReason.Occupancy : MoveBlockReason.OutOfBounds;
+        }
+
+        private static bool ContainsCell(IReadOnlyList<Vector2I> cells, int col, int row)
         {
             for (var index = 0; index < cells.Count; index++)
             {
@@ -343,19 +486,44 @@ namespace CursedBlood.Player
             return false;
         }
 
-        private void HandlePointerPressed(bool pressed, Vector2 position)
+        private void HandlePointerPressed(bool pressed, Vector2 position, int pointerId)
         {
-            _pointerActive = pressed;
-            _pointerMoved = false;
-            _touchGuarding = false;
-            _pointerHoldTime = 0f;
-            _pointerStart = position;
+            if (pressed)
+            {
+                if (_pointerActive)
+                {
+                    return;
+                }
+
+                _pointerActive = true;
+                _pointerMoved = false;
+                _touchGuarding = false;
+                _pointerHoldTime = 0f;
+                _pointerStart = position;
+                _activePointerId = pointerId;
+                VirtualPad?.Begin(position);
+                return;
+            }
+
+            if (!_pointerActive || _activePointerId != pointerId)
+            {
+                return;
+            }
+
+            CancelTouchInput();
         }
 
-        private void DetectSwipe(Vector2 currentPosition)
+        private void HandlePointerDragged(Vector2 currentPosition)
         {
+            if (!_pointerActive)
+            {
+                return;
+            }
+
+            VirtualPad?.UpdatePointer(currentPosition);
             var delta = currentPosition - _pointerStart;
-            if (delta.Length() < SwipeThreshold)
+            var deadZone = VirtualPad?.Settings.DeadZoneRadius ?? 32f;
+            if (delta.Length() < deadZone)
             {
                 return;
             }
@@ -363,8 +531,51 @@ namespace CursedBlood.Player
             _pointerMoved = true;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
-            _pointerStart = currentPosition;
-            RequestDirection(SnapToOctant(delta));
+
+            var direction = VirtualPad?.GetSnappedDirection() ?? SnapToOctant(delta);
+            RequestDirection(direction);
+        }
+
+        private void ClearMoveProbe(Vector2I origin)
+        {
+            _moveDebugInfo.Reset(origin, Vector2I.Zero);
+            _movementStatusText = string.Empty;
+        }
+
+        private static string BuildMovementStatus(MoveDebugInfo info)
+        {
+            if (!info.HasTarget)
+            {
+                return string.Empty;
+            }
+
+            if (!info.CanMove)
+            {
+                return GetBlockReasonLabel(info.BlockReason);
+            }
+
+            if (info.MaxHardness >= 4f - 0.01f)
+            {
+                return "Digging: HardRock x4.0";
+            }
+
+            if (info.MaxHardness >= 2f - 0.01f)
+            {
+                return $"Digging: {CellTypeUtil.GetName(info.SlowestCellType)} x{info.MaxHardness:0.0}";
+            }
+
+            return string.Empty;
+        }
+
+        private static string GetBlockReasonLabel(MoveBlockReason reason)
+        {
+            return reason switch
+            {
+                MoveBlockReason.Bedrock => "Blocked: Bedrock",
+                MoveBlockReason.Occupancy => "Blocked: Occupancy",
+                MoveBlockReason.OutOfBounds => "Blocked: OutOfBounds",
+                _ => "Blocked"
+            };
         }
 
         private static Vector2I SnapToOctant(Vector2 delta)

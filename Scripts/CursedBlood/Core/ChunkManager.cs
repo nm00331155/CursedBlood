@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CursedBlood.Player;
 using Godot;
 
 namespace CursedBlood.Core
@@ -6,14 +7,18 @@ namespace CursedBlood.Core
     public partial class ChunkManager : Node2D
     {
         private const float FlashDuration = 0.14f;
+        private const float BlockFlashDuration = 0.16f;
 
         private readonly Dictionary<int, ChunkData> _chunks = new();
         private readonly Dictionary<long, DigFlash> _digFlashes = new();
+        private readonly Dictionary<long, BlockFlash> _blockFlashes = new();
         private readonly List<int> _chunkScratch = new();
         private readonly List<long> _flashScratch = new();
 
         private TerrainGenerator _generator;
         private int _cameraTopRow;
+        private MoveDebugInfo _moveDebugInfo;
+        private bool _moveDebugVisible;
 
         public const int CellSize = 16;
         public const int ChunkHeight = 16;
@@ -33,33 +38,8 @@ namespace CursedBlood.Core
 
         public override void _Process(double delta)
         {
-            if (_digFlashes.Count == 0)
-            {
-                return;
-            }
-
-            _flashScratch.Clear();
-            foreach (var key in _digFlashes.Keys)
-            {
-                _flashScratch.Add(key);
-            }
-
-            var needsRefresh = false;
-            for (var index = 0; index < _flashScratch.Count; index++)
-            {
-                var key = _flashScratch[index];
-                var flash = _digFlashes[key];
-                flash.TimeLeft -= (float)delta;
-                if (flash.TimeLeft <= 0f)
-                {
-                    _digFlashes.Remove(key);
-                }
-                else
-                {
-                    _digFlashes[key] = flash;
-                    needsRefresh = true;
-                }
-            }
+            var needsRefresh = UpdateDigFlashes((float)delta);
+            needsRefresh |= UpdateBlockFlashes((float)delta);
 
             if (needsRefresh)
             {
@@ -71,8 +51,11 @@ namespace CursedBlood.Core
         {
             _chunks.Clear();
             _digFlashes.Clear();
+            _blockFlashes.Clear();
             _cameraTopRow = 0;
             _generator = new TerrainGenerator(unchecked((int)GD.Randi()));
+            _moveDebugInfo = null;
+            _moveDebugVisible = false;
 
             for (var chunkIndex = 0; chunkIndex < 8; chunkIndex++)
             {
@@ -104,9 +87,14 @@ namespace CursedBlood.Core
             return chunk;
         }
 
+        public bool IsInBounds(int col, int absoluteRow)
+        {
+            return col >= 0 && col < Columns && absoluteRow >= 0;
+        }
+
         public byte GetCell(int col, int absoluteRow)
         {
-            if (col < 0 || col >= Columns || absoluteRow < 0)
+            if (!IsInBounds(col, absoluteRow))
             {
                 return (byte)CellType.Bedrock;
             }
@@ -118,7 +106,7 @@ namespace CursedBlood.Core
 
         public void SetCell(int col, int absoluteRow, byte value)
         {
-            if (col < 0 || col >= Columns || absoluteRow < 0)
+            if (!IsInBounds(col, absoluteRow))
             {
                 return;
             }
@@ -136,6 +124,29 @@ namespace CursedBlood.Core
             if (value == (byte)CellType.Empty && previous != (byte)CellType.Empty)
             {
                 _digFlashes[Pack(col, absoluteRow)] = new DigFlash((CellType)previous, FlashDuration);
+            }
+        }
+
+        public void FlashBlockedCell(Vector2I cell, MoveBlockReason reason)
+        {
+            if (!IsInBounds(cell.X, cell.Y))
+            {
+                return;
+            }
+
+            _blockFlashes[Pack(cell.X, cell.Y)] = new BlockFlash(GetBlockFlashColor(reason), BlockFlashDuration);
+            QueueRedraw();
+        }
+
+        public void SetMoveDebugInfo(MoveDebugInfo moveDebugInfo, bool visible)
+        {
+            var visibilityChanged = _moveDebugVisible != visible || _moveDebugInfo != moveDebugInfo;
+            _moveDebugInfo = moveDebugInfo;
+            _moveDebugVisible = visible;
+
+            if (visible || visibilityChanged)
+            {
+                QueueRedraw();
             }
         }
 
@@ -240,6 +251,106 @@ namespace CursedBlood.Core
                 }
             }
 
+            DrawSpecialMarkers();
+            DrawDigFlashes();
+            DrawBlockFlashes();
+            DrawMoveDebugOverlay();
+        }
+
+        private void DrawSpecialMarkers()
+        {
+            for (var row = _cameraTopRow; row < _cameraTopRow + VisibleRows; row++)
+            {
+                for (var col = 0; col < Columns; col++)
+                {
+                    var type = (CellType)GetCell(col, row);
+                    if (type != CellType.RecoveryPoint && type != CellType.Ore)
+                    {
+                        continue;
+                    }
+
+                    var rect = new Rect2(GridToWorld(col, row), new Vector2(CellSize, CellSize));
+                    if (type == CellType.RecoveryPoint)
+                    {
+                        DrawCircle(rect.GetCenter(), CellSize * 0.28f, new Color(0.92f, 1f, 0.98f, 0.9f));
+                        DrawArc(rect.GetCenter(), CellSize * 0.36f, 0f, Mathf.Tau, 24, new Color(0.12f, 0.48f, 0.52f, 0.95f), 2f);
+                    }
+                    else
+                    {
+                        DrawLine(rect.Position + new Vector2(3f, 3f), rect.End - new Vector2(3f, 3f), new Color(1f, 0.95f, 0.72f, 0.72f), 1.4f);
+                    }
+                }
+            }
+        }
+
+        private bool UpdateDigFlashes(float delta)
+        {
+            if (_digFlashes.Count == 0)
+            {
+                return false;
+            }
+
+            _flashScratch.Clear();
+            foreach (var key in _digFlashes.Keys)
+            {
+                _flashScratch.Add(key);
+            }
+
+            var needsRefresh = false;
+            for (var index = 0; index < _flashScratch.Count; index++)
+            {
+                var key = _flashScratch[index];
+                var flash = _digFlashes[key];
+                flash.TimeLeft -= delta;
+                if (flash.TimeLeft <= 0f)
+                {
+                    _digFlashes.Remove(key);
+                }
+                else
+                {
+                    _digFlashes[key] = flash;
+                    needsRefresh = true;
+                }
+            }
+
+            return needsRefresh;
+        }
+
+        private bool UpdateBlockFlashes(float delta)
+        {
+            if (_blockFlashes.Count == 0)
+            {
+                return false;
+            }
+
+            _flashScratch.Clear();
+            foreach (var key in _blockFlashes.Keys)
+            {
+                _flashScratch.Add(key);
+            }
+
+            var needsRefresh = false;
+            for (var index = 0; index < _flashScratch.Count; index++)
+            {
+                var key = _flashScratch[index];
+                var flash = _blockFlashes[key];
+                flash.TimeLeft -= delta;
+                if (flash.TimeLeft <= 0f)
+                {
+                    _blockFlashes.Remove(key);
+                }
+                else
+                {
+                    _blockFlashes[key] = flash;
+                    needsRefresh = true;
+                }
+            }
+
+            return needsRefresh;
+        }
+
+        private void DrawDigFlashes()
+        {
             foreach (var entry in _digFlashes)
             {
                 Unpack(entry.Key, out var col, out var row);
@@ -255,10 +366,79 @@ namespace CursedBlood.Core
             }
         }
 
+        private void DrawBlockFlashes()
+        {
+            foreach (var entry in _blockFlashes)
+            {
+                Unpack(entry.Key, out var col, out var row);
+                if (row < _cameraTopRow || row >= _cameraTopRow + VisibleRows)
+                {
+                    continue;
+                }
+
+                var rect = new Rect2(GridToWorld(col, row), new Vector2(CellSize, CellSize));
+                var color = entry.Value.Color;
+                color.A *= Mathf.Clamp(entry.Value.TimeLeft / BlockFlashDuration, 0f, 1f);
+                DrawRect(rect, color);
+                DrawRect(rect, new Color(1f, 0.96f, 0.96f, color.A), false, 1.4f);
+            }
+        }
+
+        private void DrawMoveDebugOverlay()
+        {
+            if (!_moveDebugVisible || _moveDebugInfo == null || !_moveDebugInfo.HasTarget)
+            {
+                return;
+            }
+
+            for (var index = 0; index < _moveDebugInfo.DigArea.Count; index++)
+            {
+                DrawDebugCell(_moveDebugInfo.DigArea[index], new Color(0.20f, 0.74f, 0.95f, 0.12f), new Color(0.45f, 0.88f, 1f, 0.85f), 1.2f);
+            }
+
+            for (var index = 0; index < _moveDebugInfo.OccupancyArea.Count; index++)
+            {
+                DrawDebugCell(_moveDebugInfo.OccupancyArea[index], new Color(0f, 0f, 0f, 0f), new Color(1f, 0.82f, 0.24f, 0.92f), 1.4f);
+            }
+
+            DrawDebugCell(_moveDebugInfo.Target, new Color(1f, 1f, 1f, 0.08f), new Color(1f, 1f, 1f, 0.95f), 1.8f);
+
+            if (_moveDebugInfo.HasBlockedCell)
+            {
+                DrawDebugCell(_moveDebugInfo.BlockedCell, new Color(1f, 0.20f, 0.20f, 0.18f), new Color(1f, 0.46f, 0.46f, 1f), 2f);
+            }
+        }
+
+        private void DrawDebugCell(Vector2I cell, Color fillColor, Color outlineColor, float outlineWidth)
+        {
+            if (cell.Y < _cameraTopRow || cell.Y >= _cameraTopRow + VisibleRows || !IsInBounds(cell.X, cell.Y))
+            {
+                return;
+            }
+
+            var rect = new Rect2(GridToWorld(cell.X, cell.Y), new Vector2(CellSize, CellSize));
+            if (fillColor.A > 0f)
+            {
+                DrawRect(rect, fillColor);
+            }
+
+            DrawRect(rect, outlineColor, false, outlineWidth);
+        }
+
         private void DrawRun(int row, int startCol, int length, CellType type, int depthTier)
         {
             var rect = new Rect2(GridToWorld(startCol, row), new Vector2(length * CellSize, CellSize));
             DrawRect(rect, CellTypeUtil.GetColor(type, depthTier));
+        }
+
+        private static Color GetBlockFlashColor(MoveBlockReason reason)
+        {
+            return reason switch
+            {
+                MoveBlockReason.Occupancy => new Color(1f, 0.82f, 0.24f, 0.72f),
+                MoveBlockReason.OutOfBounds => new Color(1f, 0.44f, 0.30f, 0.78f),
+                _ => new Color(1f, 0.22f, 0.22f, 0.78f)
+            };
         }
 
         private static long Pack(int col, int row)
@@ -281,6 +461,19 @@ namespace CursedBlood.Core
             }
 
             public CellType Type;
+
+            public float TimeLeft;
+        }
+
+        private struct BlockFlash
+        {
+            public BlockFlash(Color color, float timeLeft)
+            {
+                Color = color;
+                TimeLeft = timeLeft;
+            }
+
+            public Color Color;
 
             public float TimeLeft;
         }
