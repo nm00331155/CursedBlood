@@ -1,4 +1,4 @@
-using System;
+using System.Collections.Generic;
 using CursedBlood.Core;
 using Godot;
 
@@ -6,49 +6,60 @@ namespace CursedBlood.Player
 {
     public partial class PlayerController : Node2D
     {
-        [Export]
-        public float SwipeThreshold { get; set; } = 40f;
+        private const float GuardHoldSeconds = 0.18f;
 
-        private const float PlayerRadius = 50f;
-
+        private readonly List<Vector2I> _digBuffer = new(24);
         private Vector2I _moveDirection = Vector2I.Down;
         private Vector2I _bufferedDirection = Vector2I.Zero;
+        private Vector2I _moveTargetGrid;
+        private Vector2 _moveStartPosition;
+        private Vector2 _moveEndPosition;
+        private Vector2 _pointerStart;
+        private bool _pointerActive;
+        private bool _pointerMoved;
+        private bool _touchGuarding;
         private bool _isMoving;
+        private float _pointerHoldTime;
         private float _moveTimer;
         private float _currentMoveDuration;
-        private Vector2I _moveTarget;
-        private Vector2 _touchStartPosition;
-        private bool _isTouching;
-        private bool _isGuarding;
-        private double _lastTapSeconds = -10d;
-        private GameTheme _theme = ThemeSettings.CreateDefault().BuildTheme();
+        private int _lastPlayerSize;
+        private LifePhase _lastPhase;
 
-        public GridManager Grid { get; set; }
+        [Export]
+        public float SwipeThreshold { get; set; } = 32f;
+
+        public ChunkManager Chunks { get; set; }
 
         public PlayerStats Stats { get; set; }
 
         public bool InputEnabled { get; set; } = true;
 
-        public bool IsGuarding => _isGuarding;
+        public bool IsGuarding => Input.IsKeyPressed(Key.Space) || _touchGuarding;
 
         public Vector2I CurrentDirection => _moveDirection;
 
-        public Action<CellData, bool> CellEntered { get; set; }
-
-        public Action<Vector2I> SkillRequested { get; set; }
-
-        public Func<Vector2I, Vector2I, bool> BossAttackRequested { get; set; }
+        public override void _Ready()
+        {
+            SetProcess(true);
+        }
 
         public override void _Process(double delta)
         {
-            if (!InputEnabled || Stats == null || Grid == null || !Stats.IsAlive)
+            if (!InputEnabled || Stats == null || Chunks == null || !Stats.IsAlive)
             {
                 return;
             }
 
             HandleKeyboardInput();
+            UpdateTouchGuard((float)delta);
             ProcessMovement((float)delta);
-            QueueRedraw();
+
+            if (_lastPlayerSize != Stats.PlayerSize || _lastPhase != Stats.Phase)
+            {
+                _lastPlayerSize = Stats.PlayerSize;
+                _lastPhase = Stats.Phase;
+                QueueRedraw();
+            }
         }
 
         public override void _Input(InputEvent @event)
@@ -58,101 +69,54 @@ namespace CursedBlood.Player
                 return;
             }
 
-            if (@event is InputEventScreenTouch screenTouch)
+            switch (@event)
             {
-                if (screenTouch.Pressed)
-                {
-                    TryTriggerTapSkill();
-                    _touchStartPosition = screenTouch.Position;
-                    _isTouching = true;
-                }
-                else
-                {
-                    _isTouching = false;
-                }
+                case InputEventScreenTouch screenTouch:
+                    HandlePointerPressed(screenTouch.Pressed, screenTouch.Position);
+                    break;
+                case InputEventMouseButton mouseButton when mouseButton.ButtonIndex == MouseButton.Left:
+                    HandlePointerPressed(mouseButton.Pressed, mouseButton.Position);
+                    break;
+                case InputEventScreenDrag screenDrag:
+                    DetectSwipe(screenDrag.Position);
+                    break;
+                case InputEventMouseMotion mouseMotion when _pointerActive:
+                    DetectSwipe(mouseMotion.Position);
+                    break;
             }
-            else if (@event is InputEventMouseButton mouseButton && mouseButton.ButtonIndex == MouseButton.Left)
-            {
-                if (mouseButton.Pressed)
-                {
-                    TryTriggerTapSkill();
-                    _touchStartPosition = mouseButton.Position;
-                    _isTouching = true;
-                }
-                else
-                {
-                    _isTouching = false;
-                }
-            }
-
-            if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo && keyEvent.Keycode == Key.Enter)
-            {
-                SkillRequested?.Invoke(_moveDirection);
-            }
-
-            if (@event is InputEventScreenDrag screenDrag)
-            {
-                DetectSwipe(screenDrag.Position);
-            }
-            else if (@event is InputEventMouseMotion mouseMotion && _isTouching)
-            {
-                DetectSwipe(mouseMotion.Position);
-            }
-        }
-
-        public void ApplyTheme(GameTheme theme)
-        {
-            _theme = theme;
-            QueueRedraw();
-        }
-
-        public Vector2 GetWorldPosition()
-        {
-            if (Stats == null || Grid == null)
-            {
-                return Vector2.Zero;
-            }
-
-            var basePosition = Grid.GridToWorld(Stats.GridPosition.X, Stats.GridPosition.Y);
-            if (_isMoving && _currentMoveDuration > 0f)
-            {
-                var interpolation = Mathf.Min(_moveTimer / _currentMoveDuration, 1f);
-                var targetPosition = Grid.GridToWorld(_moveTarget.X, _moveTarget.Y);
-                return basePosition.Lerp(targetPosition, interpolation);
-            }
-
-            return basePosition;
         }
 
         public override void _Draw()
         {
-            if (Stats == null || Grid == null)
+            if (Stats == null)
             {
                 return;
             }
 
-            var position = GetWorldPosition();
-            var playerColor = Stats.Phase switch
+            var sizePixels = Stats.PlayerSize * ChunkManager.CellSize;
+            var half = sizePixels * 0.5f;
+            var rect = new Rect2(-half, -half, sizePixels, sizePixels);
+
+            var bodyColor = Stats.Phase switch
             {
-                LifePhase.Youth => _theme.PlayerYouthColor,
-                LifePhase.Prime => _theme.PlayerPrimeColor,
-                LifePhase.Twilight => _theme.PlayerTwilightColor,
-                _ => _theme.PlayerPrimeColor
+                LifePhase.Youth => new Color(0.26f, 0.82f, 0.45f),
+                LifePhase.Prime => new Color(0.25f, 0.58f, 0.92f),
+                LifePhase.Twilight => new Color(0.93f, 0.55f, 0.20f),
+                _ => new Color(0.25f, 0.58f, 0.92f)
             };
 
-            DrawCircle(position, PlayerRadius, playerColor);
-            DrawArc(position, PlayerRadius, 0f, Mathf.Tau, 48, _theme.BorderColor, 4f);
+            DrawRect(rect, bodyColor);
+            DrawRect(rect, new Color(0.96f, 0.96f, 0.98f), false, 2f);
 
-            var directionVector = new Vector2(_moveDirection.X, _moveDirection.Y);
-            if (directionVector != Vector2.Zero)
+            if (_moveDirection != Vector2I.Zero)
             {
-                directionVector = directionVector.Normalized();
-                DrawLine(position, position + directionVector * (PlayerRadius + 16f), _theme.TextColor, 4f);
+                var direction = new Vector2(_moveDirection.X, _moveDirection.Y).Normalized();
+                DrawLine(Vector2.Zero, direction * (half + 12f), new Color(0.98f, 0.98f, 0.98f), 4f);
             }
 
-            if (_isGuarding)
+            if (IsGuarding)
             {
-                DrawArc(position, PlayerRadius + 12f, 0f, Mathf.Tau, 48, _theme.BorderColor, 3f);
+                DrawArc(Vector2.Zero, half + 10f, 0f, Mathf.Tau, 48, new Color(0.75f, 0.92f, 1f), 4f);
             }
         }
 
@@ -160,167 +124,264 @@ namespace CursedBlood.Player
         {
             _moveDirection = Vector2I.Down;
             _bufferedDirection = Vector2I.Zero;
-            _isMoving = false;
+            _moveTargetGrid = Vector2I.Zero;
             _moveTimer = 0f;
             _currentMoveDuration = 0f;
-            _moveTarget = Vector2I.Zero;
-            _isTouching = false;
-            _isGuarding = false;
-            _lastTapSeconds = -10d;
+            _pointerActive = false;
+            _pointerMoved = false;
+            _touchGuarding = false;
+            _pointerHoldTime = 0f;
+            _isMoving = false;
+            _lastPlayerSize = Stats?.PlayerSize ?? 3;
+            _lastPhase = Stats?.Phase ?? LifePhase.Youth;
+            SyncToStatsPosition();
             QueueRedraw();
         }
 
-        private void DetectSwipe(Vector2 currentPosition)
+        public void SyncToStatsPosition()
         {
-            var difference = currentPosition - _touchStartPosition;
-            if (difference.Length() < SwipeThreshold)
+            if (Stats == null || Chunks == null)
             {
                 return;
             }
 
-            Vector2I newDirection;
-            if (Mathf.Abs(difference.X) > Mathf.Abs(difference.Y))
-            {
-                newDirection = difference.X > 0f ? Vector2I.Right : Vector2I.Left;
-            }
-            else
-            {
-                newDirection = difference.Y > 0f ? Vector2I.Down : Vector2I.Up;
-            }
+            Position = Chunks.GridToWorldCenter(Stats.GridPosition.X, Stats.GridPosition.Y);
+            _moveStartPosition = Position;
+            _moveEndPosition = Position;
+            _isMoving = false;
+            _moveTimer = 0f;
+        }
 
-            SetDirection(newDirection);
-            _touchStartPosition = currentPosition;
+        public Vector2 GetCurrentWorldPosition()
+        {
+            return GlobalPosition;
         }
 
         private void HandleKeyboardInput()
         {
-            _isGuarding = Input.IsKeyPressed(Key.Space);
+            var inputDirection = Vector2I.Zero;
+            if (Input.IsKeyPressed(Key.Left))
+            {
+                inputDirection.X -= 1;
+            }
+
+            if (Input.IsKeyPressed(Key.Right))
+            {
+                inputDirection.X += 1;
+            }
 
             if (Input.IsKeyPressed(Key.Up))
             {
-                SetDirection(Vector2I.Up);
+                inputDirection.Y -= 1;
             }
-            else if (Input.IsKeyPressed(Key.Down))
+
+            if (Input.IsKeyPressed(Key.Down))
             {
-                SetDirection(Vector2I.Down);
+                inputDirection.Y += 1;
             }
-            else if (Input.IsKeyPressed(Key.Left))
+
+            if (inputDirection != Vector2I.Zero)
             {
-                SetDirection(Vector2I.Left);
-            }
-            else if (Input.IsKeyPressed(Key.Right))
-            {
-                SetDirection(Vector2I.Right);
+                RequestDirection(inputDirection);
             }
         }
 
-        private void SetDirection(Vector2I direction)
+        private void UpdateTouchGuard(float delta)
         {
+            if (!_pointerActive || _pointerMoved)
+            {
+                return;
+            }
+
+            _pointerHoldTime += delta;
+            if (_pointerHoldTime >= GuardHoldSeconds)
+            {
+                _touchGuarding = true;
+            }
+        }
+
+        private void ProcessMovement(float delta)
+        {
+            if (_isMoving)
+            {
+                _moveTimer += delta;
+                var progress = _currentMoveDuration <= 0f ? 1f : Mathf.Clamp(_moveTimer / _currentMoveDuration, 0f, 1f);
+                Position = _moveStartPosition.Lerp(_moveEndPosition, progress);
+
+                if (progress >= 1f)
+                {
+                    CompleteMove();
+                }
+
+                return;
+            }
+
+            if (IsGuarding)
+            {
+                return;
+            }
+
+            if (_bufferedDirection != Vector2I.Zero)
+            {
+                _moveDirection = _bufferedDirection;
+                _bufferedDirection = Vector2I.Zero;
+                QueueRedraw();
+            }
+
+            TryStartMove();
+        }
+
+        private void RequestDirection(Vector2I direction)
+        {
+            if (direction == Vector2I.Zero)
+            {
+                return;
+            }
+
             if (_isMoving)
             {
                 _bufferedDirection = direction;
                 return;
             }
 
-            _moveDirection = direction;
-        }
-
-        private void ProcessMovement(float delta)
-        {
-            if (_isGuarding)
+            if (_moveDirection != direction)
             {
-                return;
-            }
-
-            if (!_isMoving)
-            {
-                if (_bufferedDirection != Vector2I.Zero)
-                {
-                    _moveDirection = _bufferedDirection;
-                    _bufferedDirection = Vector2I.Zero;
-                }
-
-                TryStartMove();
-            }
-
-            if (!_isMoving)
-            {
-                return;
-            }
-
-            _moveTimer += delta;
-            if (_moveTimer >= _currentMoveDuration)
-            {
-                CompleteMove();
+                _moveDirection = direction;
+                QueueRedraw();
             }
         }
 
-        private void TryStartMove()
+        private bool TryStartMove()
         {
+            if (_moveDirection == Vector2I.Zero)
+            {
+                return false;
+            }
+
+            DigHelper.FillDigArea(_digBuffer, Stats.GridPosition, _moveDirection, Stats.DigWidth, Stats.DigShape, Stats.PlayerSize);
+            if (_digBuffer.Count == 0)
+            {
+                return false;
+            }
+
             var target = Stats.GridPosition + _moveDirection;
+            var maxHardness = 1f;
 
-            if (target.X < 0 || target.X >= GridManager.Columns || target.Y < 0)
+            for (var index = 0; index < _digBuffer.Count; index++)
             {
-                return;
-            }
-
-            var cell = Grid.GetCell(target.X, target.Y);
-            if (cell == null || !cell.IsDiggable)
-            {
-                return;
-            }
-
-            if (cell.HasBoss)
-            {
-                if (BossAttackRequested?.Invoke(Stats.GridPosition, _moveDirection) == true)
+                var cell = _digBuffer[index];
+                var type = (CellType)Chunks.GetCell(cell.X, cell.Y);
+                if (!CellTypeUtil.IsDiggable(type))
                 {
-                    return;
+                    return false;
                 }
 
-                return;
+                maxHardness = Mathf.Max(maxHardness, CellTypeUtil.GetHardness(type));
             }
 
-            _moveTarget = target;
+            if (!CanOccupyAfterDig(target, Stats.PlayerSize, _digBuffer))
+            {
+                return false;
+            }
+
+            var dugCount = DigHelper.ExecuteDig(Chunks, _digBuffer);
+            if (dugCount > 0)
+            {
+                Stats.RegisterDig(dugCount);
+            }
+
+            _moveTargetGrid = target;
+            _moveStartPosition = Chunks.GridToWorldCenter(Stats.GridPosition.X, Stats.GridPosition.Y);
+            _moveEndPosition = Chunks.GridToWorldCenter(target.X, target.Y);
             _moveTimer = 0f;
-            _currentMoveDuration = Stats.GetMovementDuration(cell.Type, cell.Hardness);
+            _currentMoveDuration = Stats.EffectiveMoveInterval * maxHardness;
             _isMoving = true;
+            return true;
         }
 
         private void CompleteMove()
         {
             _isMoving = false;
-            var cell = Grid.GetCell(_moveTarget.X, _moveTarget.Y);
-            var wasSolid = cell != null && cell.Type != CellType.Empty && cell.Type != CellType.Boss;
+            Stats.GridPosition = _moveTargetGrid;
+            Stats.RegisterDepth(_moveTargetGrid.Y);
+            Position = _moveEndPosition;
+            Chunks.UpdateCamera(Stats.GridPosition.Y);
+        }
 
-            Stats.GridPosition = _moveTarget;
-            if (_moveTarget.Y > Stats.MaxDepth)
+        private bool CanOccupyAfterDig(Vector2I center, int size, List<Vector2I> digArea)
+        {
+            var half = size / 2;
+            for (var row = center.Y - half; row <= center.Y + half; row++)
             {
-                Stats.MaxDepth = _moveTarget.Y;
-            }
-
-            if (cell != null)
-            {
-                CellEntered?.Invoke(cell, wasSolid);
-                if (cell.IsDiggable && cell.Type != CellType.Empty && cell.Type != CellType.Boss)
+                for (var col = center.X - half; col <= center.X + half; col++)
                 {
-                    cell.Dig();
+                    if (ContainsCell(digArea, col, row))
+                    {
+                        continue;
+                    }
+
+                    if ((CellType)Chunks.GetCell(col, row) == CellType.Bedrock)
+                    {
+                        return false;
+                    }
                 }
             }
 
-            Grid.UpdateVisibleRange(Stats.GridPosition.Y);
+            return true;
         }
 
-        private void TryTriggerTapSkill()
+        private static bool ContainsCell(List<Vector2I> cells, int col, int row)
         {
-            var currentTime = Time.GetTicksMsec() / 1000.0;
-            if (currentTime - _lastTapSeconds <= 0.30d)
+            for (var index = 0; index < cells.Count; index++)
             {
-                SkillRequested?.Invoke(_moveDirection);
-                _lastTapSeconds = -10d;
+                if (cells[index].X == col && cells[index].Y == row)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void HandlePointerPressed(bool pressed, Vector2 position)
+        {
+            _pointerActive = pressed;
+            _pointerMoved = false;
+            _touchGuarding = false;
+            _pointerHoldTime = 0f;
+            _pointerStart = position;
+        }
+
+        private void DetectSwipe(Vector2 currentPosition)
+        {
+            var delta = currentPosition - _pointerStart;
+            if (delta.Length() < SwipeThreshold)
+            {
                 return;
             }
 
-            _lastTapSeconds = currentTime;
+            _pointerMoved = true;
+            _touchGuarding = false;
+            _pointerHoldTime = 0f;
+            _pointerStart = currentPosition;
+            RequestDirection(SnapToOctant(delta));
+        }
+
+        private static Vector2I SnapToOctant(Vector2 delta)
+        {
+            var octant = Mathf.PosMod(Mathf.RoundToInt(delta.Angle() / (Mathf.Pi / 4f)), 8);
+            return octant switch
+            {
+                0 => Vector2I.Right,
+                1 => new Vector2I(1, 1),
+                2 => Vector2I.Down,
+                3 => new Vector2I(-1, 1),
+                4 => Vector2I.Left,
+                5 => new Vector2I(-1, -1),
+                6 => Vector2I.Up,
+                7 => new Vector2I(1, -1),
+                _ => Vector2I.Down
+            };
         }
     }
 }

@@ -9,12 +9,13 @@ config_version=5
 
 [application]
 config/name="CursedBlood"
-run/main_scene="res://Scenes/CursedBlood/TitleScene.tscn"
-config/features=PackedStringArray("4.4", "C#", "Forward Plus")
+run/main_scene="res://Scenes/CursedBlood/CursedBloodMain.tscn"
+config/features=PackedStringArray("4.6", "C#")
 
 [display]
 window/size/viewport_width=1080
 window/size/viewport_height=1920
+window/size/resizable=false
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 window/handheld/orientation="portrait"
@@ -23,4 +24,5 @@ window/handheld/orientation="portrait"
 project/assembly_name="CursedBlood"
 
 [rendering]
-renderer/rendering_method="forward_plus"
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true

@@ -2,47 +2,51 @@
 
 更新日: 2026-03-09
 
+## 現行ビルド方針
+
+- `docs/修正指示001.md` に従い、現行ビルドは Phase 1 最小プレイアブルを唯一の目標に再構成している
+- `CursedBlood.csproj` では Phase 2〜9 のディレクトリ群と旧 `GridManager` 系をビルド対象から除外している
+- Phase 2〜9 のソースはリポジトリに残っているが、現行ビルドで有効化はしていない
+
 ## 実装状況
 
-| Phase | 状態 | 主な実装内容 | 主なファイル |
+| Phase | 状態 | 主な内容 | 主なファイル |
 |---|---|---|---|
-| 1 | 実装済み | グリッド、移動、寿命、HUD、死亡/再開 | `Core/*`, `Player/*`, `UI/HUDManager.cs`, `UI/DeathScreen.cs` |
-| 2 | 実装済み | 敵4種、弾、鉱石、コンボ、HP死亡 | `Enemy/EnemyManager.cs`, `Enemy/BulletManager.cs`, `Core/GridGenerator.cs` |
-| 3 | 実装済み | 装備生成、インベントリ、装備UI、ドロップ | `Equipment/*`, `UI/HUDManager.cs`, `Core/GameManager.cs` |
-| 4 | 実装済み | 遺品選択、世代継承、家系図、名前生成 | `Generation/*`, `UI/DeathScreen.cs`, `UI/FamilyTreeUI.cs` |
-| 5 | 実装済み | 借金、利息、返済選択、借金取り敵 | `Debt/*`, `Enemy/DebtCollectorEnemy.cs`, `Core/GameManager.cs` |
-| 6 | 実装済み | 深度ボス、ボスUI、ボス弾幕、撃破報酬 | `Enemy/Boss*.cs`, `Core/GridGenerator.cs`, `Core/GameManager.cs` |
-| 7 | 実装済み | 20実績、進捗表示、解除ポップアップ、ランキングTOP10、永続パッシブ、HUD導線 | `Achievement/*`, `Player/PlayerStats.cs`, `Player/PlayerController.cs`, `Enemy/BulletManager.cs`, `Core/GameManager.cs`, `UI/HUDManager.cs`, `UI/TitleScreen.cs` |
-| 8 | 実装済み | 呪い研究、寿命延長、魔王処理、エンディングUI | `Curse/*`, `Enemy/DemonLord*.cs`, `UI/EndingUI.cs` |
-| 9 | 実装済み | スキル、演出、タイトル、設定、ポーズ、チュートリアル | `Skill/*`, `Effects/*`, `Audio/*`, `UI/TitleScreen.cs`, `UI/SettingsUI.cs` |
+| 1 | 完了 | 16x16 セル、67x87 表示、16 行チャンク、8方向移動、幅5掘削、60秒寿命、DeathScreen 再開、世代加算 | `Core/CellType.cs`, `Core/ChunkData.cs`, `Core/TerrainGenerator.cs`, `Core/DigHelper.cs`, `Core/ChunkManager.cs`, `Core/GameManager.cs`, `Player/PlayerStats.cs`, `Player/PlayerController.cs`, `Camera/GameCamera.cs`, `UI/HUDManager.cs`, `UI/DeathScreen.cs` |
+| 2 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Enemy/*`, `Core/GridGenerator.cs` |
+| 3 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Equipment/*` |
+| 4 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Generation/*` |
+| 5 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Debt/*` |
+| 6 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Enemy/Boss*.cs` |
+| 7 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Achievement/*` |
+| 8 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Curse/*`, `UI/EndingUI.cs` |
+| 9 | 保留 | リポジトリ内に旧コードは残るが、修正指示001対応のため現行ビルド対象外 | `Skill/*`, `Effects/*`, `Audio/*`, `UI/TitleScreen.cs`, `UI/SettingsUI.cs` |
 
-## 作成・更新した主要ファイル群
+## 現行ビルド対象
 
-- `Scripts/CursedBlood/Core/`
-- `Scripts/CursedBlood/Player/`
-- `Scripts/CursedBlood/Enemy/`
-- `Scripts/CursedBlood/Equipment/`
-- `Scripts/CursedBlood/Generation/`
-- `Scripts/CursedBlood/Debt/`
-- `Scripts/CursedBlood/Achievement/`
-- `Scripts/CursedBlood/Achievement/AchievementData.cs`
-- `Scripts/CursedBlood/Achievement/AchievementPopup.cs`
-- `Scripts/CursedBlood/Achievement/RankingUI.cs`
-- `Scripts/CursedBlood/Curse/`
-- `Scripts/CursedBlood/Skill/`
-- `Scripts/CursedBlood/Effects/`
-- `Scripts/CursedBlood/Audio/`
-- `Scripts/CursedBlood/UI/`
-- `Scenes/CursedBlood/TitleScene.tscn`
-- `Scenes/CursedBlood/EndingScene.tscn`
+- `CursedBlood.csproj`
+- `project.godot`
+- `Scripts/CursedBlood/Core/CellType.cs`
+- `Scripts/CursedBlood/Core/ChunkData.cs`
+- `Scripts/CursedBlood/Core/TerrainGenerator.cs`
+- `Scripts/CursedBlood/Core/DigHelper.cs`
+- `Scripts/CursedBlood/Core/ChunkManager.cs`
+- `Scripts/CursedBlood/Core/GameManager.cs`
+- `Scripts/CursedBlood/Player/PlayerStats.cs`
+- `Scripts/CursedBlood/Player/PlayerController.cs`
+- `Scripts/CursedBlood/Camera/GameCamera.cs`
+- `Scripts/CursedBlood/UI/HUDManager.cs`
+- `Scripts/CursedBlood/UI/DeathScreen.cs`
+- `Scenes/CursedBlood/CursedBloodMain.tscn`
 
 ## 検証状況
 
+- `get_errors`（現行ビルド対象ファイル）: 成功
 - `dotnet build CursedBlood.csproj`: 成功
-- Godot 実行テスト: 実行ファイル未配置のため未実施
+- Godot 実行テスト: 指定実行ファイルが存在しないため未実施
 - UI スクリーンショット: 実行環境不足のため未取得
 
 ## 補足
 
-- `docs/07_PHASE7_ACHIEVEMENT.md` の改訂内容に合わせて、Phase 7 実装を再点検し直し、実コードを追従させた
-- `project.godot` の `run/main_scene` は最終仕上げに合わせて `TitleScene.tscn` へ変更済み
+- `project.godot` の `run/main_scene` は `CursedBloodMain.tscn` に戻している
+- renderer は Phase 1 指示に合わせて `mobile` を採用した

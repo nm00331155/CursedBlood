@@ -1,9 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using CursedBlood.Core;
-using CursedBlood.Debt;
-using CursedBlood.Equipment;
 using CursedBlood.Player;
 using Godot;
 
@@ -11,25 +6,18 @@ namespace CursedBlood.UI
 {
     public partial class DeathScreen : CanvasLayer
     {
-        private bool _uiBuilt;
-        private bool _isVisible;
-        private GameTheme _theme = ThemeSettings.CreateDefault().BuildTheme();
+        private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
         private Label _titleLabel;
         private Label _causeLabel;
-        private Label _statsLabel;
-        private Label _heirloomLabel;
-        private Button _continueButton;
-        private DebtUI _debtUi;
-        private readonly List<Button> _heirloomButtons = new();
-        private DebtPaymentKind _selectedDebtKind = DebtPaymentKind.None;
-        private EquipmentData _selectedHeirloom;
-        private IReadOnlyList<DebtPaymentOption> _currentDebtOptions = Array.Empty<DebtPaymentOption>();
+        private Label _summaryLabel;
+        private Label _hintLabel;
+        private Button _restartButton;
 
-        public bool IsVisibleScreen => _isVisible;
+        public bool IsVisibleScreen => _overlay != null && _overlay.Visible;
 
-        public event Action<DebtPaymentKind, EquipmentData> ContinueRequested;
+        public event Action RestartRequested;
 
         public void Initialize()
         {
@@ -37,60 +25,16 @@ namespace CursedBlood.UI
             SetScreenVisible(false);
         }
 
-        public void ApplyTheme(GameTheme theme)
-        {
-            _theme = theme;
-            if (!_uiBuilt)
-            {
-                return;
-            }
-
-            _overlay.Color = theme.OverlayColor;
-            var panelStyle = new StyleBoxFlat
-            {
-                BgColor = new Color(theme.PanelColor.R, theme.PanelColor.G, theme.PanelColor.B, 0.98f),
-                BorderColor = theme.BorderColor,
-                BorderWidthBottom = 3,
-                BorderWidthLeft = 3,
-                BorderWidthRight = 3,
-                BorderWidthTop = 3,
-                CornerRadiusBottomLeft = 20,
-                CornerRadiusBottomRight = 20,
-                CornerRadiusTopLeft = 20,
-                CornerRadiusTopRight = 20
-            };
-            _panel.AddThemeStyleboxOverride("panel", panelStyle);
-
-            ApplyLabelTheme(_titleLabel);
-            ApplyLabelTheme(_causeLabel);
-            ApplyLabelTheme(_statsLabel);
-            ApplyLabelTheme(_heirloomLabel);
-            _continueButton.AddThemeColorOverride("font_color", theme.TextColor);
-        }
-
-        public void Show(PlayerStats stats, string deathCause, IReadOnlyList<DebtPaymentOption> debtOptions)
+        public void Show(PlayerStats stats, string cause)
         {
             BuildUiIfNeeded();
-            SetScreenVisible(true);
-
-            _currentDebtOptions = debtOptions ?? Array.Empty<DebtPaymentOption>();
-            _selectedDebtKind = DebtPaymentKind.None;
-            _selectedHeirloom = null;
-
-            _causeLabel.Text = deathCause;
-            _statsLabel.Text =
+            _causeLabel.Text = cause;
+            _summaryLabel.Text =
                 $"世代: 第{stats.Generation}世代\n" +
-                $"享年: {(int)stats.HumanAge}歳\n" +
-                $"最大深度: {stats.MaxDepth}\n" +
-                $"スコア: {stats.CalculateScore():N0}\n" +
-                $"撃破数: {stats.EnemiesKilled}\n" +
-                $"最大コンボ: {stats.MaxCombo}\n" +
-                $"所持ゴールド: {stats.Gold:N0}G";
-
-            _debtUi.SetOptions(_currentDebtOptions);
-            BuildHeirloomButtons(stats);
-            _heirloomLabel.Text = "遺品: なし";
-            UpdateContinueButton();
+                $"享年: {Mathf.RoundToInt(stats.HumanAge)}歳\n" +
+                $"最大深度: {stats.MaxDepthMeters}m\n" +
+                $"スコア: {stats.CalculateScore():N0}";
+            SetScreenVisible(true);
         }
 
         public void HideScreen()
@@ -98,9 +42,37 @@ namespace CursedBlood.UI
             SetScreenVisible(false);
         }
 
+        public override void _UnhandledInput(InputEvent @event)
+        {
+            if (!IsVisibleScreen)
+            {
+                return;
+            }
+
+            if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
+            {
+                RestartRequested?.Invoke();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            if (@event is InputEventMouseButton mouseButton && mouseButton.Pressed)
+            {
+                RestartRequested?.Invoke();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            if (@event is InputEventScreenTouch screenTouch && screenTouch.Pressed)
+            {
+                RestartRequested?.Invoke();
+                GetViewport().SetInputAsHandled();
+            }
+        }
+
         private void BuildUiIfNeeded()
         {
-            if (_uiBuilt)
+            if (_built)
             {
                 return;
             }
@@ -108,133 +80,83 @@ namespace CursedBlood.UI
             _overlay = new ColorRect
             {
                 Position = Vector2.Zero,
-                Size = new Vector2(1080f, 1920f)
+                Size = new Vector2(1080f, 1920f),
+                Color = new Color(0f, 0f, 0f, 0.78f)
             };
             AddChild(_overlay);
 
             _panel = new Panel
             {
-                Position = new Vector2(70f, 120f),
-                Size = new Vector2(940f, 1580f)
+                Position = new Vector2(120f, 360f),
+                Size = new Vector2(840f, 920f)
             };
+            var panelStyle = new StyleBoxFlat
+            {
+                BgColor = new Color(0.10f, 0.12f, 0.16f, 0.98f),
+                BorderColor = new Color(0.86f, 0.90f, 0.96f),
+                BorderWidthTop = 3,
+                BorderWidthBottom = 3,
+                BorderWidthLeft = 3,
+                BorderWidthRight = 3,
+                CornerRadiusTopLeft = 24,
+                CornerRadiusTopRight = 24,
+                CornerRadiusBottomLeft = 24,
+                CornerRadiusBottomRight = 24
+            };
+            _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            _titleLabel = CreateLabel(new Vector2(60f, 42f), 52, HorizontalAlignment.Center);
-            _titleLabel.Size = new Vector2(820f, 68f);
-            _titleLabel.Text = "命尽きる";
+            _titleLabel = CreateLabel(new Vector2(70f, 60f), new Vector2(700f, 56f), 48, HorizontalAlignment.Center);
+            _titleLabel.Text = "血脈はここで尽きた";
             _panel.AddChild(_titleLabel);
 
-            _causeLabel = CreateLabel(new Vector2(60f, 118f), 28, HorizontalAlignment.Center);
-            _causeLabel.Size = new Vector2(820f, 56f);
+            _causeLabel = CreateLabel(new Vector2(70f, 134f), new Vector2(700f, 36f), 26, HorizontalAlignment.Center);
             _panel.AddChild(_causeLabel);
 
-            _statsLabel = CreateLabel(new Vector2(70f, 210f), 28);
-            _statsLabel.Size = new Vector2(360f, 360f);
-            _panel.AddChild(_statsLabel);
+            _summaryLabel = CreateLabel(new Vector2(120f, 250f), new Vector2(600f, 260f), 34, HorizontalAlignment.Left);
+            _panel.AddChild(_summaryLabel);
 
-            _debtUi = new DebtUI
+            _hintLabel = CreateLabel(new Vector2(70f, 650f), new Vector2(700f, 72f), 24, HorizontalAlignment.Center);
+            _hintLabel.Text = "タップ / クリック / キー入力で次世代を開始";
+            _panel.AddChild(_hintLabel);
+
+            _restartButton = new Button
             {
-                Position = new Vector2(460f, 210f),
-                Size = new Vector2(620f, 280f)
-            };
-            _debtUi.OptionSelected += OnDebtOptionSelected;
-            _panel.AddChild(_debtUi);
-
-            _heirloomLabel = CreateLabel(new Vector2(70f, 610f), 28);
-            _heirloomLabel.Size = new Vector2(820f, 36f);
-            _heirloomLabel.Text = "遺品を選択";
-            _panel.AddChild(_heirloomLabel);
-
-            _continueButton = new Button
-            {
-                Position = new Vector2(300f, 1460f),
-                Size = new Vector2(340f, 62f),
+                Position = new Vector2(240f, 760f),
+                Size = new Vector2(360f, 72f),
                 Text = "次世代へ"
             };
-            _continueButton.Pressed += OnContinuePressed;
-            _panel.AddChild(_continueButton);
+            _restartButton.AddThemeFontSizeOverride("font_size", 28);
+            _restartButton.Pressed += () => RestartRequested?.Invoke();
+            _panel.AddChild(_restartButton);
 
-            _uiBuilt = true;
-            ApplyTheme(_theme);
-        }
-
-        private void BuildHeirloomButtons(PlayerStats stats)
-        {
-            foreach (var button in _heirloomButtons)
-            {
-                button.QueueFree();
-            }
-
-            _heirloomButtons.Clear();
-            var heirloomCandidates = stats.Inventory.EnumerateAllItems().ToList();
-            heirloomCandidates.Insert(0, null);
-
-            for (var index = 0; index < heirloomCandidates.Count && index < 16; index++)
-            {
-                var candidate = heirloomCandidates[index];
-                var button = new Button
-                {
-                    Position = new Vector2(70f + (index % 2) * 390f, 660f + (index / 2) * 64f),
-                    Size = new Vector2(360f, 52f),
-                    Text = candidate == null ? "何も残さない" : candidate.GetSummary(),
-                    ClipText = true
-                };
-                var localCandidate = candidate;
-                button.Pressed += () => OnHeirloomSelected(localCandidate);
-                _heirloomButtons.Add(button);
-                _panel.AddChild(button);
-            }
-        }
-
-        private void OnDebtOptionSelected(DebtPaymentKind kind)
-        {
-            _selectedDebtKind = kind;
-            UpdateContinueButton();
-        }
-
-        private void OnHeirloomSelected(EquipmentData equipmentData)
-        {
-            _selectedHeirloom = equipmentData;
-            _heirloomLabel.Text = equipmentData == null ? "遺品: なし" : $"遺品: {equipmentData.Name}";
-        }
-
-        private void OnContinuePressed()
-        {
-            ContinueRequested?.Invoke(_selectedDebtKind, _selectedHeirloom);
-        }
-
-        private void UpdateContinueButton()
-        {
-            _continueButton.Disabled = _currentDebtOptions.Count > 0 && !_currentDebtOptions.Any(option => option.Kind == _selectedDebtKind);
-        }
-
-        private Label CreateLabel(Vector2 position, int fontSize, HorizontalAlignment horizontalAlignment = HorizontalAlignment.Left)
-        {
-            var label = new Label
-            {
-                Position = position,
-                HorizontalAlignment = horizontalAlignment,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            label.AddThemeFontSizeOverride("font_size", fontSize);
-            return label;
-        }
-
-        private void ApplyLabelTheme(Label label)
-        {
-            label.AddThemeColorOverride("font_color", _theme.TextColor);
+            _built = true;
         }
 
         private void SetScreenVisible(bool visible)
         {
-            _isVisible = visible;
-            if (!_uiBuilt)
+            if (!_built)
             {
                 return;
             }
 
             _overlay.Visible = visible;
             _panel.Visible = visible;
+        }
+
+        private static Label CreateLabel(Vector2 position, Vector2 size, int fontSize, HorizontalAlignment alignment)
+        {
+            var label = new Label
+            {
+                Position = position,
+                Size = size,
+                HorizontalAlignment = alignment,
+                VerticalAlignment = VerticalAlignment.Center,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart
+            };
+            label.AddThemeFontSizeOverride("font_size", fontSize);
+            label.AddThemeColorOverride("font_color", new Color(0.96f, 0.97f, 0.99f));
+            return label;
         }
     }
 }
