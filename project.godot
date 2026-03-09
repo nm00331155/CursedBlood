@@ -1,0 +1,26 @@
+; Engine configuration file.
+; Edit using the editor UI when possible.
+;
+; Format:
+;   [section]
+;   param=value
+
+config_version=5
+
+[application]
+config/name="CursedBlood"
+run/main_scene="res://Scenes/CursedBlood/TitleScene.tscn"
+config/features=PackedStringArray("4.4", "C#", "Forward Plus")
+
+[display]
+window/size/viewport_width=1080
+window/size/viewport_height=1920
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+window/handheld/orientation="portrait"
+
+[dotnet]
+project/assembly_name="CursedBlood"
+
+[rendering]
+renderer/rendering_method="forward_plus"

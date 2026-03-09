@@ -32,3 +32,17 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Godot
+.godot/
+.mono/
+.import/
+*.uid
+
+# .NET
+.vs/
+bin/
+obj/
+
+# User settings
+*.user
