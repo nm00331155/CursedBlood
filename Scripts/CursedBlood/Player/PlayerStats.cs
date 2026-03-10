@@ -53,6 +53,8 @@ namespace CursedBlood.Player
 
         public int DiveCount { get; private set; } = 1;
 
+        public int Generation { get; set; } = 1;
+
         public long CurrentDebt { get; private set; } = DefaultDebt;
 
         public long CurrentMoney { get; private set; }
@@ -68,6 +70,19 @@ namespace CursedBlood.Player
         public bool Rescued { get; private set; }
 
         public bool HasLeftSurface { get; private set; }
+
+        public float RemainingDiveTime => Mathf.Max(0f, MaxDiveTime - CurrentDiveTime);
+
+        public int RemainingDiveSeconds => Mathf.CeilToInt(RemainingDiveTime);
+
+        public int CurrentDepthMeters => GridPosition.Y;
+
+        public string PhaseLabel => Phase switch
+        {
+            DivePhase.Stable => "Stable",
+            DivePhase.Worn => "Worn",
+            _ => "Critical"
+        };
 
         public DivePhase Phase => CurrentDiveTime switch
         {

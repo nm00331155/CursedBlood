@@ -17,13 +17,15 @@ namespace CursedBlood.Core
 
         private TerrainGenerator _generator;
         private int _cameraTopRow;
+        private MoveDebugInfo _movePreviewInfo;
+        private bool _movePreviewVisible;
         private MoveDebugInfo _moveDebugInfo;
         private bool _moveDebugVisible;
 
         public const int CellSize = 16;
         public const int ChunkHeight = 16;
         public const int Columns = 67;
-        public const int VisibleRows = 87;
+        public const int VisibleRows = 120;
         public const float FieldOffsetX = 4f;
         public const float FieldOffsetY = 200f;
         public const float FieldWidth = Columns * CellSize;
@@ -54,6 +56,8 @@ namespace CursedBlood.Core
             _blockFlashes.Clear();
             _cameraTopRow = 0;
             _generator = new TerrainGenerator(unchecked((int)GD.Randi()));
+            _movePreviewInfo = null;
+            _movePreviewVisible = false;
             _moveDebugInfo = null;
             _moveDebugVisible = false;
 
@@ -143,6 +147,18 @@ namespace CursedBlood.Core
             var visibilityChanged = _moveDebugVisible != visible || _moveDebugInfo != moveDebugInfo;
             _moveDebugInfo = moveDebugInfo;
             _moveDebugVisible = visible;
+
+            if (visible || visibilityChanged)
+            {
+                QueueRedraw();
+            }
+        }
+
+        public void SetMovePreview(MoveDebugInfo movePreviewInfo, bool visible)
+        {
+            var visibilityChanged = _movePreviewVisible != visible || _movePreviewInfo != movePreviewInfo;
+            _movePreviewInfo = movePreviewInfo;
+            _movePreviewVisible = visible;
 
             if (visible || visibilityChanged)
             {
@@ -252,6 +268,8 @@ namespace CursedBlood.Core
             }
 
             DrawSpecialMarkers();
+            DrawTerrainAccents();
+            DrawMovePreview();
             DrawDigFlashes();
             DrawBlockFlashes();
             DrawMoveDebugOverlay();
@@ -281,6 +299,152 @@ namespace CursedBlood.Core
                     }
                 }
             }
+        }
+
+        private void DrawTerrainAccents()
+        {
+            for (var row = _cameraTopRow; row < _cameraTopRow + VisibleRows; row++)
+            {
+                for (var col = 0; col < Columns; col++)
+                {
+                    var type = (CellType)GetCell(col, row);
+                    if (type == CellType.Empty)
+                    {
+                        continue;
+                    }
+
+                    DrawCellAccent(col, row, type);
+                }
+            }
+        }
+
+        private void DrawCellAccent(int col, int row, CellType type)
+        {
+            var rect = new Rect2(GridToWorld(col, row), new Vector2(CellSize, CellSize));
+            switch (type)
+            {
+                case CellType.Dirt:
+                    DrawLine(rect.Position + new Vector2(2f, 4f), rect.Position + new Vector2(CellSize - 2f, 4f), new Color(1f, 0.93f, 0.72f, 0.18f), 1.1f);
+                    DrawLine(rect.Position + new Vector2(3f, CellSize - 4f), rect.Position + new Vector2(CellSize - 3f, CellSize - 5f), new Color(0.33f, 0.21f, 0.11f, 0.24f), 1f);
+                    break;
+                case CellType.Stone:
+                    DrawLine(rect.Position + new Vector2(2f, 5f), rect.Position + new Vector2(CellSize - 2f, 5f), new Color(0.95f, 0.98f, 1f, 0.22f), 1.1f);
+                    DrawLine(rect.Position + new Vector2(4f, 10f), rect.Position + new Vector2(CellSize - 4f, 10f), new Color(0.08f, 0.10f, 0.14f, 0.34f), 1f);
+                    break;
+                case CellType.HardRock:
+                    DrawRect(rect.Grow(-1.5f), new Color(0.82f, 0.90f, 1f, 0.34f), false, 1.2f);
+                    DrawLine(rect.Position + new Vector2(3f, 3f), rect.Position + new Vector2(CellSize - 3f, CellSize - 3f), new Color(0.94f, 0.98f, 1f, 0.18f), 1f);
+                    DrawLine(rect.Position + new Vector2(CellSize - 3f, 3f), rect.Position + new Vector2(3f, CellSize - 3f), new Color(0.03f, 0.04f, 0.06f, 0.28f), 1f);
+                    break;
+                case CellType.Bedrock:
+                    DrawRect(rect, new Color(0.92f, 0.74f, 0.96f, 0.24f), false, 1.8f);
+                    DrawRect(rect.Grow(-4f), new Color(1f, 0.94f, 1f, 0.16f), false, 1f);
+                    break;
+                case CellType.Ore:
+                    DrawLine(rect.Position + new Vector2(3f, CellSize * 0.5f), rect.Position + new Vector2(CellSize - 3f, CellSize * 0.5f), new Color(1f, 0.96f, 0.72f, 0.36f), 1.2f);
+                    DrawLine(rect.Position + new Vector2(CellSize * 0.5f, 3f), rect.Position + new Vector2(CellSize * 0.5f, CellSize - 3f), new Color(1f, 0.96f, 0.72f, 0.32f), 1.2f);
+                    DrawArc(rect.GetCenter(), CellSize * 0.22f, 0f, Mathf.Tau, 18, new Color(1f, 0.98f, 0.76f, 0.3f), 1.2f);
+                    break;
+                case CellType.RecoveryPoint:
+                    DrawRect(rect.Grow(-1f), new Color(0.82f, 1f, 0.94f, 0.24f), false, 1.1f);
+                    break;
+                case CellType.Item:
+                    DrawLine(rect.Position + new Vector2(3f, 3f), rect.End - new Vector2(3f, 3f), new Color(1f, 0.84f, 0.56f, 0.26f), 1.1f);
+                    DrawLine(rect.Position + new Vector2(CellSize - 3f, 3f), rect.Position + new Vector2(3f, CellSize - 3f), new Color(1f, 0.84f, 0.56f, 0.22f), 1.1f);
+                    break;
+                case CellType.Enemy:
+                case CellType.Boss:
+                    DrawRect(rect.Grow(-1f), new Color(1f, 0.58f, 0.58f, 0.24f), false, 1.2f);
+                    break;
+            }
+        }
+
+        private void DrawMovePreview()
+        {
+            if (!_movePreviewVisible || _movePreviewInfo == null || !_movePreviewInfo.HasTarget)
+            {
+                return;
+            }
+
+            for (var index = 0; index < _movePreviewInfo.DigArea.Count; index++)
+            {
+                var cell = _movePreviewInfo.DigArea[index];
+                var type = GetPreviewCellType(cell);
+                DrawPreviewCell(cell, GetPreviewFillColor(type), GetPreviewOutlineColor(type), 1.3f);
+            }
+
+            for (var index = 0; index < _movePreviewInfo.OccupancyArea.Count; index++)
+            {
+                var cell = _movePreviewInfo.OccupancyArea[index];
+                if (ContainsPreviewCell(_movePreviewInfo.DigArea, cell))
+                {
+                    continue;
+                }
+
+                DrawDebugCell(cell, new Color(0f, 0f, 0f, 0f), _movePreviewInfo.CanMove
+                    ? new Color(0.96f, 0.98f, 1f, 0.72f)
+                    : new Color(1f, 0.54f, 0.54f, 0.9f), 1.6f);
+            }
+
+            DrawDebugCell(_movePreviewInfo.Target, new Color(1f, 1f, 1f, 0.06f), new Color(1f, 1f, 1f, 0.92f), 1.8f);
+
+            if (_movePreviewInfo.HasBlockedCell)
+            {
+                DrawDebugCell(_movePreviewInfo.BlockedCell, new Color(1f, 0.24f, 0.24f, 0.20f), new Color(1f, 0.54f, 0.54f, 1f), 2f);
+            }
+        }
+
+        private CellType GetPreviewCellType(Vector2I cell)
+        {
+            return IsInBounds(cell.X, cell.Y) ? (CellType)GetCell(cell.X, cell.Y) : CellType.Bedrock;
+        }
+
+        private static Color GetPreviewFillColor(CellType type)
+        {
+            if (!CellTypeUtil.IsDiggable(type))
+            {
+                return new Color(1f, 0.28f, 0.28f, 0.22f);
+            }
+
+            if (CellTypeUtil.IsHardDig(type))
+            {
+                return new Color(1f, 0.82f, 0.24f, 0.20f);
+            }
+
+            return new Color(0.36f, 0.98f, 0.62f, 0.18f);
+        }
+
+        private static Color GetPreviewOutlineColor(CellType type)
+        {
+            if (!CellTypeUtil.IsDiggable(type))
+            {
+                return new Color(1f, 0.50f, 0.50f, 0.92f);
+            }
+
+            if (CellTypeUtil.IsHardDig(type))
+            {
+                return new Color(1f, 0.90f, 0.48f, 0.94f);
+            }
+
+            return new Color(0.72f, 1f, 0.82f, 0.88f);
+        }
+
+        private void DrawPreviewCell(Vector2I cell, Color fillColor, Color outlineColor, float outlineWidth)
+        {
+            DrawDebugCell(cell, fillColor, outlineColor, outlineWidth);
+        }
+
+        private static bool ContainsPreviewCell(IReadOnlyList<Vector2I> cells, Vector2I target)
+        {
+            for (var index = 0; index < cells.Count; index++)
+            {
+                if (cells[index] == target)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool UpdateDigFlashes(float delta)

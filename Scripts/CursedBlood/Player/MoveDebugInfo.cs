@@ -35,6 +35,8 @@ namespace CursedBlood.Player
 
         public float MaxHardness { get; private set; } = 1f;
 
+        public bool RequiresDig { get; private set; }
+
         public bool CanMove { get; private set; }
 
         public bool HasTarget => Direction != Vector2I.Zero;
@@ -56,6 +58,7 @@ namespace CursedBlood.Player
             BlockedCellType = CellType.Empty;
             BlockReason = MoveBlockReason.None;
             MaxHardness = 1f;
+            RequiresDig = false;
             CanMove = false;
             HasBlockedCell = false;
             _digArea.Clear();
@@ -83,6 +86,11 @@ namespace CursedBlood.Player
         public void SetTargetCellType(CellType type)
         {
             TargetCellType = type;
+        }
+
+        public void SetRequiresDig(bool requiresDig)
+        {
+            RequiresDig = requiresDig;
         }
 
         public void ConsiderHardness(CellType type)

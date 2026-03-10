@@ -41,6 +41,21 @@ namespace CursedBlood.Core
             return type != CellType.Bedrock && type != CellType.Enemy && type != CellType.Boss;
         }
 
+        public static bool IsPassable(CellType type)
+        {
+            return type is CellType.Empty or CellType.RecoveryPoint or CellType.Item;
+        }
+
+        public static bool RequiresDig(CellType type)
+        {
+            return !IsPassable(type) && IsDiggable(type);
+        }
+
+        public static bool IsHardDig(CellType type)
+        {
+            return GetHardness(type) > 1f;
+        }
+
         public static string GetName(CellType type)
         {
             return type switch
@@ -62,27 +77,27 @@ namespace CursedBlood.Core
         public static Color GetColor(CellType type, int depthTier)
         {
             depthTier = Mathf.Clamp(depthTier, 0, 4);
-            var shade = depthTier * 0.08f;
+            var shade = depthTier * 0.06f;
 
             return type switch
             {
-                CellType.Empty => new Color(0.08f, 0.08f, 0.10f),
-                CellType.Dirt => Shade(new Color(0.53f, 0.34f, 0.18f), shade),
-                CellType.Stone => Shade(new Color(0.58f, 0.61f, 0.66f), shade),
-                CellType.HardRock => Shade(new Color(0.20f, 0.24f, 0.29f), shade),
-                CellType.Ore => Shade(new Color(0.90f, 0.78f, 0.24f), shade * 0.5f),
-                CellType.Bedrock => Shade(new Color(0.02f, 0.02f, 0.03f), shade * 0.2f),
-                CellType.Enemy => Shade(new Color(0.78f, 0.22f, 0.22f), shade * 0.3f),
-                CellType.Boss => Shade(new Color(0.62f, 0.16f, 0.18f), shade * 0.3f),
-                CellType.RecoveryPoint => Shade(new Color(0.22f, 0.88f, 0.82f), shade * 0.2f),
-                CellType.Item => Shade(new Color(0.88f, 0.52f, 0.24f), shade * 0.2f),
+                CellType.Empty => Shade(new Color(0.03f, 0.05f, 0.08f), shade * 0.65f),
+                CellType.Dirt => Shade(new Color(0.74f, 0.53f, 0.31f), shade * 0.9f),
+                CellType.Stone => Shade(new Color(0.58f, 0.68f, 0.77f), shade),
+                CellType.HardRock => Shade(new Color(0.29f, 0.35f, 0.43f), shade * 0.75f),
+                CellType.Ore => Shade(new Color(0.98f, 0.81f, 0.30f), shade * 0.35f),
+                CellType.Bedrock => Shade(new Color(0.08f, 0.06f, 0.10f), shade * 0.2f),
+                CellType.Enemy => Shade(new Color(0.92f, 0.33f, 0.31f), shade * 0.25f),
+                CellType.Boss => Shade(new Color(0.74f, 0.18f, 0.22f), shade * 0.25f),
+                CellType.RecoveryPoint => Shade(new Color(0.32f, 0.95f, 0.86f), shade * 0.18f),
+                CellType.Item => Shade(new Color(1.00f, 0.63f, 0.24f), shade * 0.18f),
                 _ => new Color(0.6f, 0.6f, 0.6f)
             };
         }
 
         private static Color Shade(Color color, float amount)
         {
-            return color.Lerp(new Color(0.04f, 0.04f, 0.05f), Mathf.Clamp(amount, 0f, 0.35f));
+            return color.Lerp(new Color(0.02f, 0.03f, 0.05f), Mathf.Clamp(amount, 0f, 0.32f));
         }
     }
 }

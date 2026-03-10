@@ -34,9 +34,9 @@ namespace CursedBlood.Core
 
             return Strength switch
             {
-                SonarSignalStrength.Far => "ソナー: 何かある",
-                SonarSignalStrength.Medium => $"ソナー: 弱い反応 {directionLabel}",
-                SonarSignalStrength.Near => $"ソナー: 強い反応 {directionLabel} / {DescribeTarget(TargetType)}",
+                SonarSignalStrength.Far => $"ソナー: 微反応 / {DistanceCells}m先",
+                SonarSignalStrength.Medium => $"ソナー: {directionLabel} / {DistanceCells}m",
+                SonarSignalStrength.Near => $"ソナー: {directionLabel} / {DescribeTarget(TargetType)} / {DistanceCells}m",
                 _ => "ソナー: 反応なし"
             };
         }
