@@ -7,6 +7,8 @@ namespace CursedBlood.UI
 {
     public partial class BaseHubScreen : CanvasLayer
     {
+        private static readonly Vector2 PanelDesignPosition = new(54f, 70f);
+
         private bool _built;
         private ColorRect _background;
         private Panel _panel;
@@ -26,12 +28,14 @@ namespace CursedBlood.UI
         public void Initialize()
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             HideScreen();
         }
 
         public void ShowScreen(SaveData data, string message)
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             _profileLabel.Text = $"主人公: {data.PlayerProfile.Name} / {data.PlayerProfile.Gender}\n総潜行回数: {data.PlayerProfile.TotalDiveCount}";
             _moneyLabel.Text = $"所持金 {data.PlayerProfile.CurrentMoney:N0}";
             _debtLabel.Text = data.Debt.DebtCleared
@@ -48,6 +52,17 @@ namespace CursedBlood.UI
         public void HideScreen()
         {
             SetVisibleState(false);
+        }
+
+        public void ApplyViewportLayout()
+        {
+            if (!_built)
+            {
+                return;
+            }
+
+            CanvasLayoutHelper.StretchOverlay(this, _background);
+            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
         }
 
         private void BuildUiIfNeeded()
@@ -67,8 +82,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = new Vector2(70f, 90f),
-                Size = new Vector2(940f, 1680f)
+                Position = PanelDesignPosition,
+                Size = new Vector2(972f, 1740f)
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -86,68 +101,71 @@ namespace CursedBlood.UI
             _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            var title = CreateLabel(new Vector2(70f, 40f), new Vector2(760f, 52f), 44, HorizontalAlignment.Center);
+            var title = CreateLabel(new Vector2(62f, 32f), new Vector2(848f, 66f), 56, HorizontalAlignment.Center);
             title.Text = "拠点 / 準備";
             _panel.AddChild(title);
 
-            _profileLabel = CreateLabel(new Vector2(70f, 130f), new Vector2(360f, 100f), 28, HorizontalAlignment.Left);
+            _profileLabel = CreateLabel(new Vector2(70f, 132f), new Vector2(420f, 120f), 34, HorizontalAlignment.Left);
             _panel.AddChild(_profileLabel);
 
-            _moneyLabel = CreateLabel(new Vector2(520f, 130f), new Vector2(300f, 42f), 30, HorizontalAlignment.Right);
+            _moneyLabel = CreateLabel(new Vector2(552f, 132f), new Vector2(320f, 48f), 36, HorizontalAlignment.Right);
             _panel.AddChild(_moneyLabel);
 
-            _debtLabel = CreateLabel(new Vector2(520f, 180f), new Vector2(300f, 90f), 22, HorizontalAlignment.Right);
+            _debtLabel = CreateLabel(new Vector2(522f, 188f), new Vector2(350f, 108f), 28, HorizontalAlignment.Right);
             _panel.AddChild(_debtLabel);
 
             _startButton = new Button
             {
-                Position = new Vector2(250f, 320f),
-                Size = new Vector2(440f, 96f),
+                Position = new Vector2(250f, 346f),
+                Size = new Vector2(460f, 106f),
                 Text = "次の潜行へ出発"
             };
-            _startButton.AddThemeFontSizeOverride("font_size", 34);
+            _startButton.AddThemeFontSizeOverride("font_size", 40);
             _startButton.Pressed += () => StartDiveRequested?.Invoke();
             _panel.AddChild(_startButton);
 
             var profileButton = new Button
             {
-                Position = new Vector2(250f, 434f),
-                Size = new Vector2(440f, 66f),
+                Position = new Vector2(250f, 470f),
+                Size = new Vector2(460f, 74f),
                 Text = "主人公設定を開く"
             };
+            profileButton.AddThemeFontSizeOverride("font_size", 26);
             profileButton.Pressed += () => ProfileEditRequested?.Invoke();
             _panel.AddChild(profileButton);
 
-            var placeholderLabel = CreateLabel(new Vector2(110f, 560f), new Vector2(720f, 40f), 24, HorizontalAlignment.Left);
+            var placeholderLabel = CreateLabel(new Vector2(110f, 602f), new Vector2(720f, 40f), 30, HorizontalAlignment.Left);
             placeholderLabel.Text = "仮配置メニュー";
             _panel.AddChild(placeholderLabel);
 
-            AddPlaceholderButton(new Vector2(110f, 620f), "装備変更", "装備画面は次段階で接続予定です。");
-            AddPlaceholderButton(new Vector2(470f, 620f), "研究", "研究画面は次段階で接続予定です。");
-            AddPlaceholderButton(new Vector2(110f, 710f), "実績", "実績画面は次段階で接続予定です。");
-            AddPlaceholderButton(new Vector2(470f, 710f), "ランキング", "ランキング画面は次段階で接続予定です。");
-            AddPlaceholderButton(new Vector2(110f, 800f), "設定", "設定画面は次段階で接続予定です。");
+            AddPlaceholderButton(new Vector2(110f, 662f), "装備変更", "装備画面は次段階で接続予定です。");
+            AddPlaceholderButton(new Vector2(486f, 662f), "研究", "研究画面は次段階で接続予定です。");
+            AddPlaceholderButton(new Vector2(110f, 758f), "実績", "実績画面は次段階で接続予定です。");
+            AddPlaceholderButton(new Vector2(486f, 758f), "ランキング", "ランキング画面は次段階で接続予定です。");
+            AddPlaceholderButton(new Vector2(110f, 854f), "設定", "設定画面は次段階で接続予定です。");
 
-            var recordsTitle = CreateLabel(new Vector2(110f, 910f), new Vector2(720f, 40f), 24, HorizontalAlignment.Left);
+            var recordsTitle = CreateLabel(new Vector2(110f, 980f), new Vector2(720f, 40f), 30, HorizontalAlignment.Left);
             recordsTitle.Text = "最近の潜行記録";
             _panel.AddChild(recordsTitle);
 
-            _recordsLabel = CreateLabel(new Vector2(110f, 960f), new Vector2(720f, 360f), 22, HorizontalAlignment.Left);
+            _recordsLabel = CreateLabel(new Vector2(110f, 1038f), new Vector2(760f, 390f), 28, HorizontalAlignment.Left);
             _panel.AddChild(_recordsLabel);
 
-            _messageLabel = CreateLabel(new Vector2(110f, 1340f), new Vector2(720f, 120f), 22, HorizontalAlignment.Left);
+            _messageLabel = CreateLabel(new Vector2(110f, 1450f), new Vector2(760f, 150f), 28, HorizontalAlignment.Left);
             _panel.AddChild(_messageLabel);
 
             var titleButton = new Button
             {
-                Position = new Vector2(250f, 1500f),
-                Size = new Vector2(440f, 68f),
+                Position = new Vector2(250f, 1632f),
+                Size = new Vector2(460f, 78f),
                 Text = "タイトルへ戻る"
             };
+            titleButton.AddThemeFontSizeOverride("font_size", 26);
             titleButton.Pressed += () => ReturnToTitleRequested?.Invoke();
             _panel.AddChild(titleButton);
 
             _built = true;
+            ApplyViewportLayout();
         }
 
         private void AddPlaceholderButton(Vector2 position, string text, string message)
@@ -155,9 +173,10 @@ namespace CursedBlood.UI
             var button = new Button
             {
                 Position = position,
-                Size = new Vector2(300f, 70f),
+                Size = new Vector2(320f, 76f),
                 Text = text
             };
+            button.AddThemeFontSizeOverride("font_size", 24);
             button.Pressed += () => _messageLabel.Text = message;
             _panel.AddChild(button);
         }

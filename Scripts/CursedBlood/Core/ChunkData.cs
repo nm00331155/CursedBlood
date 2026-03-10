@@ -1,21 +1,25 @@
+using Godot;
+
 namespace CursedBlood.Core
 {
     public sealed class ChunkData
     {
-        public const int Width = 67;
-        public const int Height = 16;
+        public const int Width = 32;
+        public const int Height = 24;
 
-        public ChunkData(int chunkIndex)
+        public ChunkData(int chunkX, int chunkY)
         {
-            ChunkIndex = chunkIndex;
+            ChunkCoordinates = new Vector2I(chunkX, chunkY);
             Cells = new byte[Width * Height];
         }
 
         public byte[] Cells { get; }
 
-        public int ChunkIndex { get; }
+        public Vector2I ChunkCoordinates { get; }
 
-        public int StartRow => ChunkIndex * Height;
+        public int StartCol => ChunkCoordinates.X * Width;
+
+        public int StartRow => ChunkCoordinates.Y * Height;
 
         public byte GetCell(int localCol, int localRow)
         {
@@ -27,7 +31,7 @@ namespace CursedBlood.Core
             Cells[ToIndex(localCol, localRow)] = value;
         }
 
-        public int ToIndex(int col, int row)
+        private static int ToIndex(int col, int row)
         {
             return row * Width + col;
         }

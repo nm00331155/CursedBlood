@@ -1,11 +1,14 @@
 using System;
 using CursedBlood.Core;
+using CursedBlood.UI;
 using Godot;
 
 namespace CursedBlood.Debt
 {
     public partial class DebtUI : CanvasLayer
     {
+        private static readonly Vector2 PanelDesignPosition = new(74f, 140f);
+
         private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
@@ -19,17 +22,20 @@ namespace CursedBlood.Debt
         public void Initialize()
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             HideScreen();
         }
 
         public void ShowScreen(DiveResultData result, DebtSettlementPreview preview)
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             _titleLabel.Text = "借金精算";
             _summaryLabel.Text =
                 $"潜行結果: {result.OutcomeLabel}\n" +
                 $"持ち帰り額: {result.CarryValue:N0} / ロスト額: {result.LostValue:N0}\n" +
                 $"回収費: {result.RescueCost:N0}\n" +
+                (result.RescueCost > 0L ? $"内訳: {result.BuildRescueCostBreakdownText()}\n" : string.Empty) +
                 $"精算前借金: {preview.DebtBeforeInterest:N0}\n" +
                 $"今回利息: {preview.InterestAmount:N0}\n" +
                 $"精算開始時借金: {preview.DebtAfterInterest:N0}\n" +
@@ -51,6 +57,17 @@ namespace CursedBlood.Debt
             SetVisibleState(false);
         }
 
+        public void ApplyViewportLayout()
+        {
+            if (!_built)
+            {
+                return;
+            }
+
+            CanvasLayoutHelper.StretchOverlay(this, _overlay);
+            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+        }
+
         private void BuildUiIfNeeded()
         {
             if (_built)
@@ -68,8 +85,8 @@ namespace CursedBlood.Debt
 
             _panel = new Panel
             {
-                Position = new Vector2(100f, 180f),
-                Size = new Vector2(880f, 1280f)
+                Position = PanelDesignPosition,
+                Size = new Vector2(932f, 1380f)
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -87,26 +104,26 @@ namespace CursedBlood.Debt
             _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            _titleLabel = CreateLabel(new Vector2(80f, 44f), new Vector2(720f, 56f), 48, HorizontalAlignment.Center);
+            _titleLabel = CreateLabel(new Vector2(70f, 42f), new Vector2(792f, 68f), 58, HorizontalAlignment.Center);
             _panel.AddChild(_titleLabel);
 
-            _summaryLabel = CreateLabel(new Vector2(120f, 140f), new Vector2(640f, 340f), 30, HorizontalAlignment.Left);
+            _summaryLabel = CreateLabel(new Vector2(104f, 142f), new Vector2(724f, 390f), 36, HorizontalAlignment.Left);
             _panel.AddChild(_summaryLabel);
 
-            _optionHintLabel = CreateLabel(new Vector2(120f, 500f), new Vector2(640f, 80f), 22, HorizontalAlignment.Left);
+            _optionHintLabel = CreateLabel(new Vector2(104f, 564f), new Vector2(724f, 96f), 28, HorizontalAlignment.Left);
             _panel.AddChild(_optionHintLabel);
 
             for (var index = 0; index < _optionButtons.Length; index++)
             {
                 var button = new Button
                 {
-                    Position = new Vector2(120f, 620f + index * 138f),
-                    Size = new Vector2(640f, 112f),
+                    Position = new Vector2(104f, 692f + index * 152f),
+                    Size = new Vector2(724f, 124f),
                     ClipText = true,
                     Alignment = HorizontalAlignment.Left,
                     Text = string.Empty
                 };
-                button.AddThemeFontSizeOverride("font_size", 22);
+                button.AddThemeFontSizeOverride("font_size", 28);
                 var capturedIndex = index;
                 button.Pressed += () => RepaymentSelected?.Invoke((DebtRepaymentChoice)capturedIndex);
                 _optionButtons[index] = button;
@@ -114,6 +131,7 @@ namespace CursedBlood.Debt
             }
 
             _built = true;
+            ApplyViewportLayout();
         }
 
         private void SetVisibleState(bool visible)

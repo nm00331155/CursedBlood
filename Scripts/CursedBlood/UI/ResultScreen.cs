@@ -6,6 +6,8 @@ namespace CursedBlood.UI
 {
     public partial class ResultScreen : CanvasLayer
     {
+        private static readonly Vector2 PanelDesignPosition = new(80f, 190f);
+
         private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
@@ -22,12 +24,14 @@ namespace CursedBlood.UI
         public void Initialize()
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             SetScreenVisible(false);
         }
 
         public void Show(DiveResultData result)
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             _resultLabel.Text = result.OutcomeLabel;
             _summaryLabel.Text = result.BuildSummaryText();
             SetScreenVisible(true);
@@ -36,6 +40,17 @@ namespace CursedBlood.UI
         public void HideScreen()
         {
             SetScreenVisible(false);
+        }
+
+        public void ApplyViewportLayout()
+        {
+            if (!_built)
+            {
+                return;
+            }
+
+            CanvasLayoutHelper.StretchOverlay(this, _overlay);
+            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
         }
 
         public override void _UnhandledInput(InputEvent @event)
@@ -83,8 +98,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = new Vector2(110f, 250f),
-                Size = new Vector2(860f, 1120f)
+                Position = PanelDesignPosition,
+                Size = new Vector2(920f, 1260f)
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -102,31 +117,32 @@ namespace CursedBlood.UI
             _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            _titleLabel = CreateLabel(new Vector2(80f, 54f), new Vector2(700f, 56f), 48, HorizontalAlignment.Center);
+            _titleLabel = CreateLabel(new Vector2(70f, 48f), new Vector2(780f, 72f), 60, HorizontalAlignment.Center);
             _titleLabel.Text = "潜行結果";
             _panel.AddChild(_titleLabel);
 
-            _resultLabel = CreateLabel(new Vector2(80f, 130f), new Vector2(700f, 40f), 28, HorizontalAlignment.Center);
+            _resultLabel = CreateLabel(new Vector2(70f, 132f), new Vector2(780f, 46f), 36, HorizontalAlignment.Center);
             _panel.AddChild(_resultLabel);
 
-            _summaryLabel = CreateLabel(new Vector2(120f, 240f), new Vector2(620f, 560f), 34, HorizontalAlignment.Left);
+            _summaryLabel = CreateLabel(new Vector2(100f, 242f), new Vector2(720f, 660f), 40, HorizontalAlignment.Left);
             _panel.AddChild(_summaryLabel);
 
-            _hintLabel = CreateLabel(new Vector2(80f, 890f), new Vector2(700f, 66f), 24, HorizontalAlignment.Center);
+            _hintLabel = CreateLabel(new Vector2(70f, 1010f), new Vector2(780f, 76f), 28, HorizontalAlignment.Center);
             _hintLabel.Text = "タップ / クリック / キー入力で返済画面へ";
             _panel.AddChild(_hintLabel);
 
             _continueButton = new Button
             {
-                Position = new Vector2(250f, 980f),
-                Size = new Vector2(360f, 84f),
+                Position = new Vector2(258f, 1114f),
+                Size = new Vector2(404f, 96f),
                 Text = "返済画面へ"
             };
-            _continueButton.AddThemeFontSizeOverride("font_size", 30);
+            _continueButton.AddThemeFontSizeOverride("font_size", 36);
             _continueButton.Pressed += () => ContinueRequested?.Invoke();
             _panel.AddChild(_continueButton);
 
             _built = true;
+            ApplyViewportLayout();
         }
 
         private void SetScreenVisible(bool visible)

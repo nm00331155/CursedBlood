@@ -24,9 +24,9 @@ namespace CursedBlood.Core
             {
                 CellType.Empty => 1f,
                 CellType.Dirt => 1f,
-                CellType.Stone => 2f,
-                CellType.HardRock => 4f,
-                CellType.Ore => 1.5f,
+                CellType.Stone => 1.35f,
+                CellType.HardRock => 1.85f,
+                CellType.Ore => 1.15f,
                 CellType.RecoveryPoint => 1f,
                 CellType.Item => 1f,
                 CellType.Bedrock => float.MaxValue,
@@ -82,10 +82,10 @@ namespace CursedBlood.Core
             return type switch
             {
                 CellType.Empty => Shade(new Color(0.03f, 0.05f, 0.08f), shade * 0.65f),
-                CellType.Dirt => Shade(new Color(0.74f, 0.53f, 0.31f), shade * 0.9f),
-                CellType.Stone => Shade(new Color(0.58f, 0.68f, 0.77f), shade),
-                CellType.HardRock => Shade(new Color(0.29f, 0.35f, 0.43f), shade * 0.75f),
-                CellType.Ore => Shade(new Color(0.98f, 0.81f, 0.30f), shade * 0.35f),
+                CellType.Dirt => Shade(new Color(0.76f, 0.54f, 0.28f), shade * 0.82f),
+                CellType.Stone => Shade(new Color(0.60f, 0.71f, 0.80f), shade),
+                CellType.HardRock => Shade(new Color(0.23f, 0.33f, 0.42f), shade * 0.70f),
+                CellType.Ore => Shade(new Color(0.98f, 0.84f, 0.28f), shade * 0.32f),
                 CellType.Bedrock => Shade(new Color(0.08f, 0.06f, 0.10f), shade * 0.2f),
                 CellType.Enemy => Shade(new Color(0.92f, 0.33f, 0.31f), shade * 0.25f),
                 CellType.Boss => Shade(new Color(0.74f, 0.18f, 0.22f), shade * 0.25f),

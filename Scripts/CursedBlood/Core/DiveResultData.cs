@@ -32,6 +32,14 @@ namespace CursedBlood.Core
 
         public long RescueCost { get; init; }
 
+        public long RescueCostBase { get; init; }
+
+        public long RescueCostDepth { get; init; }
+
+        public long RescueCostInventory { get; init; }
+
+        public long RescueCostChain { get; init; }
+
         public long DebtBefore { get; init; }
 
         public long DebtAfter { get; init; }
@@ -46,6 +54,16 @@ namespace CursedBlood.Core
 
         public int BlocksDug { get; init; }
 
+        public int FinalChainCount { get; init; }
+
+        public int BestChainCount { get; init; }
+
+        public float CarryMultiplier { get; init; } = 1f;
+
+        public long ChainBonusValue { get; init; }
+
+        public float BonusTimeGranted { get; init; }
+
         public long DebtChange => DebtAfter - DebtBefore;
 
         public string OutcomeLabel => EndReason switch
@@ -57,6 +75,11 @@ namespace CursedBlood.Core
             _ => "潜行終了"
         };
 
+        public string BuildRescueCostBreakdownText()
+        {
+            return $"基本 {RescueCostBase:N0} / 深度 {RescueCostDepth:N0} / 資源 {RescueCostInventory:N0} / チェイン {RescueCostChain:N0}";
+        }
+
         public string BuildSummaryText()
         {
             var debtChangeLabel = DebtChange switch
@@ -67,7 +90,7 @@ namespace CursedBlood.Core
             };
 
             var rescueLine = RescueCost > 0L
-                ? $"回収費: {RescueCost:N0}\nロスト額: {LostValue:N0}\n"
+                ? $"回収費: {RescueCost:N0}\n内訳: {BuildRescueCostBreakdownText()}\nロスト額: {LostValue:N0}\n"
                 : string.Empty;
 
             var rescueReasonLine = string.IsNullOrEmpty(RescueReason)
@@ -78,6 +101,9 @@ namespace CursedBlood.Core
                 $"潜行回数: {DiveCount}\n" +
                 $"到達深度: {MaxDepthMeters}m\n" +
                 $"未換金資源: {SalvageValue:N0}\n" +
+                $"チェイン: 現在 {FinalChainCount} / 最大 {BestChainCount}\n" +
+                $"換金倍率: x{CarryMultiplier:0.000} / チェイン加算 {ChainBonusValue:N0}\n" +
+                (BonusTimeGranted > 0f ? $"追加猶予: +{BonusTimeGranted:0.#}秒\n" : string.Empty) +
                 $"持ち帰り額: {CarryValue:N0}\n" +
                 rescueLine +
                 rescueReasonLine +

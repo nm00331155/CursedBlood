@@ -5,6 +5,8 @@ namespace CursedBlood.UI
 {
     public partial class ProtagonistSelectScreen : CanvasLayer
     {
+        private static readonly Vector2 PanelDesignPosition = new(60f, 92f);
+
         private static readonly string[] MaleNames = { "アキラ", "ハヤト", "ソウマ", "レン", "トウマ", "ユウト" };
         private static readonly string[] FemaleNames = { "ユイ", "ミオ", "リン", "サクラ", "ナギサ", "ヒナ" };
 
@@ -26,12 +28,14 @@ namespace CursedBlood.UI
         public void Initialize()
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             HideScreen();
         }
 
         public void ShowScreen(CursedBlood.Save.PlayerProfileData profile, bool returnToHub)
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             _returnToHub = returnToHub;
             _selectedGender = profile.IsProfileConfigured && profile.Gender == "女" ? "女" : "男";
             _nameEdit.Text = profile.IsProfileConfigured ? profile.Name : CreateRandomName(_selectedGender);
@@ -43,6 +47,17 @@ namespace CursedBlood.UI
         public void HideScreen()
         {
             SetVisibleState(false);
+        }
+
+        public void ApplyViewportLayout()
+        {
+            if (!_built)
+            {
+                return;
+            }
+
+            CanvasLayoutHelper.StretchOverlay(this, _background);
+            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
         }
 
         private void BuildUiIfNeeded()
@@ -62,8 +77,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = new Vector2(80f, 120f),
-                Size = new Vector2(920f, 1520f)
+                Position = PanelDesignPosition,
+                Size = new Vector2(960f, 1600f)
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -81,15 +96,15 @@ namespace CursedBlood.UI
             _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            var title = CreateLabel(new Vector2(110f, 50f), new Vector2(700f, 60f), 44, HorizontalAlignment.Center);
+            var title = CreateLabel(new Vector2(90f, 42f), new Vector2(780f, 72f), 56, HorizontalAlignment.Center);
             title.Text = "主人公選択";
             _panel.AddChild(title);
 
-            var sub = CreateLabel(new Vector2(130f, 118f), new Vector2(660f, 60f), 22, HorizontalAlignment.Center);
+            var sub = CreateLabel(new Vector2(112f, 118f), new Vector2(736f, 64f), 28, HorizontalAlignment.Center);
             sub.Text = "立ち絵未実装のため、仮カードで表示しています。";
             _panel.AddChild(sub);
 
-            _maleCard = CreateCardButton(new Vector2(90f, 240f), "男\n仮立ち絵\nPlaceholder");
+            _maleCard = CreateCardButton(new Vector2(86f, 246f), "男\n仮立ち絵\nPlaceholder");
             _maleCard.Pressed += () =>
             {
                 _selectedGender = "男";
@@ -97,7 +112,7 @@ namespace CursedBlood.UI
             };
             _panel.AddChild(_maleCard);
 
-            _femaleCard = CreateCardButton(new Vector2(490f, 240f), "女\n仮立ち絵\nPlaceholder");
+            _femaleCard = CreateCardButton(new Vector2(522f, 246f), "女\n仮立ち絵\nPlaceholder");
             _femaleCard.Pressed += () =>
             {
                 _selectedGender = "女";
@@ -105,25 +120,27 @@ namespace CursedBlood.UI
             };
             _panel.AddChild(_femaleCard);
 
-            var nameLabel = CreateLabel(new Vector2(120f, 860f), new Vector2(200f, 40f), 24, HorizontalAlignment.Left);
+            var nameLabel = CreateLabel(new Vector2(118f, 904f), new Vector2(220f, 44f), 30, HorizontalAlignment.Left);
             nameLabel.Text = "名前";
             _panel.AddChild(nameLabel);
 
             _nameEdit = new LineEdit
             {
-                Position = new Vector2(120f, 918f),
-                Size = new Vector2(480f, 62f),
+                Position = new Vector2(118f, 958f),
+                Size = new Vector2(500f, 70f),
                 PlaceholderText = "主人公名を入力"
             };
+            _nameEdit.AddThemeFontSizeOverride("font_size", 28);
             _nameEdit.TextChanged += _ => UpdateConfirmEnabled();
             _panel.AddChild(_nameEdit);
 
             var randomButton = new Button
             {
-                Position = new Vector2(620f, 918f),
-                Size = new Vector2(180f, 62f),
+                Position = new Vector2(638f, 958f),
+                Size = new Vector2(200f, 70f),
                 Text = "ランダム"
             };
+            randomButton.AddThemeFontSizeOverride("font_size", 24);
             randomButton.Pressed += () =>
             {
                 _nameEdit.Text = CreateRandomName(_selectedGender);
@@ -133,25 +150,27 @@ namespace CursedBlood.UI
 
             _confirmButton = new Button
             {
-                Position = new Vector2(250f, 1100f),
-                Size = new Vector2(420f, 86f),
+                Position = new Vector2(252f, 1160f),
+                Size = new Vector2(456f, 96f),
                 Text = "この主人公で開始"
             };
-            _confirmButton.AddThemeFontSizeOverride("font_size", 30);
+            _confirmButton.AddThemeFontSizeOverride("font_size", 36);
             _confirmButton.Pressed += () => Confirmed?.Invoke(_selectedGender, _nameEdit.Text.Trim());
             _panel.AddChild(_confirmButton);
 
             var cancelButton = new Button
             {
-                Position = new Vector2(250f, 1210f),
-                Size = new Vector2(420f, 68f),
+                Position = new Vector2(252f, 1276f),
+                Size = new Vector2(456f, 78f),
                 Text = "戻る"
             };
+            cancelButton.AddThemeFontSizeOverride("font_size", 24);
             cancelButton.Pressed += () => CancelRequested?.Invoke(_returnToHub);
             _panel.AddChild(cancelButton);
 
             _built = true;
             UpdateConfirmEnabled();
+            ApplyViewportLayout();
         }
 
         private void RefreshSelection()
@@ -187,12 +206,12 @@ namespace CursedBlood.UI
             var button = new Button
             {
                 Position = position,
-                Size = new Vector2(320f, 520f),
+                Size = new Vector2(352f, 560f),
                 Text = text,
                 Alignment = HorizontalAlignment.Center,
                 VerticalIconAlignment = VerticalAlignment.Center
             };
-            button.AddThemeFontSizeOverride("font_size", 30);
+            button.AddThemeFontSizeOverride("font_size", 36);
             return button;
         }
 

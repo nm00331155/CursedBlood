@@ -6,6 +6,8 @@ namespace CursedBlood.UI
 {
     public partial class DeathScreen : CanvasLayer
     {
+        private static readonly Vector2 PanelDesignPosition = new(110f, 260f);
+
         private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
@@ -22,12 +24,14 @@ namespace CursedBlood.UI
         public void Initialize()
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             HideScreen();
         }
 
         public void Show(PlayerStats stats, string cause)
         {
             BuildUiIfNeeded();
+            ApplyViewportLayout();
             _titleLabel.Text = "潜行終了";
             _causeLabel.Text = cause;
             _summaryLabel.Text = string.Join("\n", new[]
@@ -44,6 +48,17 @@ namespace CursedBlood.UI
         public void HideScreen()
         {
             SetScreenVisible(false);
+        }
+
+        public void ApplyViewportLayout()
+        {
+            if (!_built)
+            {
+                return;
+            }
+
+            CanvasLayoutHelper.StretchOverlay(this, _overlay);
+            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
         }
 
         public override void _UnhandledInput(InputEvent @event)
@@ -91,7 +106,7 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = new Vector2(110f, 260f),
+                Position = PanelDesignPosition,
                 Size = new Vector2(860f, 1110f)
             };
             var panelStyle = new StyleBoxFlat
@@ -134,6 +149,7 @@ namespace CursedBlood.UI
             _panel.AddChild(_restartButton);
 
             _built = true;
+            ApplyViewportLayout();
         }
 
         private void SetScreenVisible(bool visible)

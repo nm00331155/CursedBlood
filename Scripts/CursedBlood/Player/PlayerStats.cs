@@ -16,9 +16,18 @@ namespace CursedBlood.Player
         public const float DefaultMaxDiveTime = 60f;
         public const int DefaultMaxHp = 100;
         public const long DefaultDebt = 500_000L;
-        public static readonly Vector2I StartGridPosition = new(33, 8);
+        public const int SurfaceRow = 8;
+        public static readonly Vector2I StartGridPosition = new(0, 10);
+
+        private float _currentMoveSpeedMultiplier = 1f;
+        private float _currentDigSpeedMultiplier = 1f;
+        private float _hazardMoveSlowdownMultiplier = 1f;
+        private float _hazardDigSlowdownMultiplier = 1f;
+        private string _hazardStatusLabel = string.Empty;
 
         public float MaxDiveTime { get; } = DefaultMaxDiveTime;
+
+        public FailureCostCalculator FailureCostCalculator { get; set; } = new();
 
         public float CurrentDiveTime { get; private set; }
 
@@ -27,8 +36,8 @@ namespace CursedBlood.Player
         public float FilterRatio => Phase switch
         {
             DivePhase.Stable => 1f,
-            DivePhase.Worn => 0.65f,
-            _ => 0.28f
+            DivePhase.Worn => 0.70f,
+            _ => 0.34f
         };
 
         public int MaxHp { get; } = DefaultMaxHp;
@@ -41,19 +50,17 @@ namespace CursedBlood.Player
 
         public int MaxDepthRow { get; private set; } = StartGridPosition.Y;
 
-        public int MaxDepthPixels => MaxDepthRow * ChunkManager.CellSize;
+        public int MaxDepthPixels => MaxDepthMeters * ChunkManager.CellSize;
 
-        public int MaxDepthMeters => MaxDepthRow;
+        public int MaxDepthMeters => Mathf.Max(0, MaxDepthRow - SurfaceRow);
 
-        public float BaseMoveInterval { get; } = 0.02f;
+        public float BaseMoveInterval { get; } = 0.0125f;
 
-        public int DigWidth { get; } = 5;
+        public int DigWidth { get; } = 7;
 
         public DigShape DigShape { get; } = DigShape.Square;
 
         public int DiveCount { get; private set; } = 1;
-
-        public int Generation { get; set; } = 1;
 
         public long CurrentDebt { get; private set; } = DefaultDebt;
 
@@ -71,34 +78,52 @@ namespace CursedBlood.Player
 
         public bool HasLeftSurface { get; private set; }
 
+        public int CurrentChainCount { get; private set; }
+
+        public int BestChainCount { get; private set; }
+
+        public float CarryValueMultiplier { get; private set; } = 1f;
+
+        public int CurrentSonarBonusRadius { get; private set; }
+
+        public float ActiveBoostTimeRemaining { get; private set; }
+
+        public float TotalBonusTimeGranted { get; private set; }
+
+        public float HazardDebuffTimeRemaining { get; private set; }
+
         public float RemainingDiveTime => Mathf.Max(0f, MaxDiveTime - CurrentDiveTime);
 
         public int RemainingDiveSeconds => Mathf.CeilToInt(RemainingDiveTime);
 
-        public int CurrentDepthMeters => GridPosition.Y;
+        public int CurrentDepthMeters => Mathf.Max(0, GridPosition.Y - SurfaceRow);
 
         public string PhaseLabel => Phase switch
         {
-            DivePhase.Stable => "Stable",
-            DivePhase.Worn => "Worn",
-            _ => "Critical"
+            DivePhase.Stable => "余裕",
+            DivePhase.Worn => "消耗",
+            _ => "危険"
         };
+
+        public string ActiveHazardLabel => HazardDebuffTimeRemaining > 0f && !string.IsNullOrWhiteSpace(_hazardStatusLabel)
+            ? $"{_hazardStatusLabel} {HazardDebuffTimeRemaining:0.0}s"
+            : string.Empty;
 
         public DivePhase Phase => CurrentDiveTime switch
         {
-            <= 20f => DivePhase.Stable,
-            <= 45f => DivePhase.Worn,
+            <= 18f => DivePhase.Stable,
+            <= 42f => DivePhase.Worn,
             _ => DivePhase.Critical
         };
 
         public float PhaseMultiplier => Phase switch
         {
-            DivePhase.Stable => 1.0f,
-            DivePhase.Worn => 0.82f,
-            _ => 0.62f
+            DivePhase.Stable => 1.00f,
+            DivePhase.Worn => 0.88f,
+            _ => 0.72f
         };
 
-        public float EffectiveMoveInterval => BaseMoveInterval / PhaseMultiplier;
+        public float EffectiveMoveInterval => ResolveMoveDuration(1f, false, 1f);
 
         public bool IsAlive => CurrentHp > 0 && CurrentDiveTime < MaxDiveTime;
 
@@ -106,7 +131,7 @@ namespace CursedBlood.Player
 
         public bool IsTimeExpired => CurrentDiveTime >= MaxDiveTime;
 
-        public bool CanReturnFromSurface => HasLeftSurface && GridPosition.Y <= StartGridPosition.Y + 2;
+        public bool CanReturnFromSurface => HasLeftSurface && GridPosition.Y <= StartGridPosition.Y;
 
         public void ConfigureDive(int diveCount, long currentDebt, long currentMoney)
         {
@@ -128,11 +153,37 @@ namespace CursedBlood.Player
             ReturnedSafely = false;
             Rescued = false;
             HasLeftSurface = false;
+            CurrentChainCount = 0;
+            BestChainCount = 0;
+            CarryValueMultiplier = 1f;
+            CurrentSonarBonusRadius = 0;
+            ActiveBoostTimeRemaining = 0f;
+            TotalBonusTimeGranted = 0f;
+            _currentMoveSpeedMultiplier = 1f;
+            _currentDigSpeedMultiplier = 1f;
+            _hazardMoveSlowdownMultiplier = 1f;
+            _hazardDigSlowdownMultiplier = 1f;
+            _hazardStatusLabel = string.Empty;
+            HazardDebuffTimeRemaining = 0f;
         }
 
         public void AdvanceTime(float delta)
         {
             CurrentDiveTime = Mathf.Min(MaxDiveTime, CurrentDiveTime + Mathf.Max(0f, delta));
+            if (HazardDebuffTimeRemaining <= 0f)
+            {
+                return;
+            }
+
+            HazardDebuffTimeRemaining = Mathf.Max(0f, HazardDebuffTimeRemaining - Mathf.Max(0f, delta));
+            if (HazardDebuffTimeRemaining > 0f)
+            {
+                return;
+            }
+
+            _hazardMoveSlowdownMultiplier = 1f;
+            _hazardDigSlowdownMultiplier = 1f;
+            _hazardStatusLabel = string.Empty;
         }
 
         public void TakeDamage(int damage)
@@ -153,7 +204,7 @@ namespace CursedBlood.Player
         public void RegisterDepth(int row)
         {
             MaxDepthRow = Math.Max(MaxDepthRow, row);
-            if (row >= StartGridPosition.Y + 6)
+            if (row >= StartGridPosition.Y + 8)
             {
                 HasLeftSurface = true;
             }
@@ -167,18 +218,75 @@ namespace CursedBlood.Player
             }
 
             OresCollected++;
-            var value = 120L + Math.Max(0, row - StartGridPosition.Y) * 4L;
+            var value = 140L + (Mathf.Max(0, row - SurfaceRow) * 5L);
             SalvageValue += value;
             return value;
+        }
+
+        public void GrantDiveTime(float bonusSeconds)
+        {
+            if (bonusSeconds <= 0f)
+            {
+                return;
+            }
+
+            TotalBonusTimeGranted += bonusSeconds;
+            CurrentDiveTime = Mathf.Max(0f, CurrentDiveTime - bonusSeconds);
+        }
+
+        public void ConsumeDiveTime(float penaltySeconds)
+        {
+            if (penaltySeconds <= 0f)
+            {
+                return;
+            }
+
+            CurrentDiveTime = Mathf.Min(MaxDiveTime, CurrentDiveTime + penaltySeconds);
+        }
+
+        public void ApplyHazard(int damage, float oxygenPenaltySeconds, float moveSlowdownMultiplier, float digSlowdownMultiplier, float debuffDurationSeconds, string statusLabel)
+        {
+            TakeDamage(damage);
+            ConsumeDiveTime(oxygenPenaltySeconds);
+
+            if (debuffDurationSeconds <= 0f)
+            {
+                return;
+            }
+
+            HazardDebuffTimeRemaining = Math.Max(HazardDebuffTimeRemaining, debuffDurationSeconds);
+            _hazardMoveSlowdownMultiplier = Math.Max(_hazardMoveSlowdownMultiplier, Mathf.Max(1f, moveSlowdownMultiplier));
+            _hazardDigSlowdownMultiplier = Math.Max(_hazardDigSlowdownMultiplier, Mathf.Max(1f, digSlowdownMultiplier));
+            _hazardStatusLabel = string.IsNullOrWhiteSpace(statusLabel) ? "妨害継続" : statusLabel;
+        }
+
+        public void UpdateChainState(int currentChainCount, int bestChainCount, float carryValueMultiplier, float moveSpeedMultiplier, float digSpeedMultiplier, int sonarBonusRadius, float boostTimeRemaining)
+        {
+            CurrentChainCount = Math.Max(0, currentChainCount);
+            BestChainCount = Math.Max(BestChainCount, Math.Max(0, bestChainCount));
+            CarryValueMultiplier = Mathf.Max(1f, carryValueMultiplier);
+            _currentMoveSpeedMultiplier = Mathf.Max(1f, moveSpeedMultiplier);
+            _currentDigSpeedMultiplier = Mathf.Max(1f, digSpeedMultiplier);
+            CurrentSonarBonusRadius = Math.Max(0, sonarBonusRadius);
+            ActiveBoostTimeRemaining = Mathf.Max(0f, boostTimeRemaining);
+        }
+
+        public float ResolveMoveDuration(float terrainHardness, bool requiresDig, float contextSlowdownMultiplier)
+        {
+            var effectiveSpeed = PhaseMultiplier * _currentMoveSpeedMultiplier * (requiresDig ? _currentDigSpeedMultiplier : 1f);
+            var clampedSpeed = Mathf.Max(0.18f, effectiveSpeed);
+            var hazardSlowdownMultiplier = requiresDig ? _hazardDigSlowdownMultiplier : _hazardMoveSlowdownMultiplier;
+            return (BaseMoveInterval * Mathf.Max(1f, terrainHardness) * Mathf.Max(1f, contextSlowdownMultiplier) * Mathf.Max(1f, hazardSlowdownMultiplier)) / clampedSpeed;
         }
 
         public long CalculateScore()
         {
             var depthScore = Math.Max(1, MaxDepthMeters) * 100L;
-            var salvageScore = SalvageValue;
+            var salvageScore = (long)Math.Round(SalvageValue * CarryValueMultiplier);
             var digScore = BlocksDug * 8L;
             var stabilityBonus = ReturnedSafely ? 5_000L : 0L;
-            return depthScore + salvageScore + digScore + stabilityBonus;
+            var chainBonus = BestChainCount * 24L;
+            return depthScore + salvageScore + digScore + stabilityBonus + chainBonus;
         }
 
         public DiveResultData FinalizeDive(DiveEndReason endReason, string rescueReason)
@@ -188,9 +296,14 @@ namespace CursedBlood.Player
 
             var debtBefore = CurrentDebt;
             var moneyBefore = CurrentMoney;
-            var lostValue = ReturnedSafely ? 0L : (long)Mathf.Round(SalvageValue * 0.70f);
-            var carriedValue = Math.Max(0L, SalvageValue - lostValue);
-            var rescueCost = ReturnedSafely ? 0L : CalculateRescueCost();
+            var boostedSalvageValue = (long)Math.Round(SalvageValue * CarryValueMultiplier);
+            var chainBonusValue = Math.Max(0L, boostedSalvageValue - SalvageValue);
+            var lostValue = ReturnedSafely ? 0L : (long)Math.Round(boostedSalvageValue * 0.70f);
+            var carriedValue = Math.Max(0L, boostedSalvageValue - lostValue);
+            var rescueCostBreakdown = ReturnedSafely
+                ? default
+                : FailureCostCalculator.Calculate(MaxDepthMeters, boostedSalvageValue, CurrentChainCount);
+            var rescueCost = ReturnedSafely ? 0L : rescueCostBreakdown.TotalCost;
             var postDiveMoney = moneyBefore + carriedValue - rescueCost;
             if (postDiveMoney >= 0L)
             {
@@ -213,22 +326,24 @@ namespace CursedBlood.Player
                 CarryValue = carriedValue,
                 LostValue = lostValue,
                 RescueCost = rescueCost,
+                RescueCostBase = rescueCostBreakdown.BaseCost,
+                RescueCostDepth = rescueCostBreakdown.DepthCost,
+                RescueCostInventory = rescueCostBreakdown.InventoryCost,
+                RescueCostChain = rescueCostBreakdown.ChainCost,
                 DebtBefore = debtBefore,
                 DebtAfter = CurrentDebt,
                 MoneyBefore = moneyBefore,
                 MoneyAfter = CurrentMoney,
                 Score = CalculateScore(),
-                SalvageValue = SalvageValue,
+                SalvageValue = boostedSalvageValue,
                 OresCollected = OresCollected,
-                BlocksDug = BlocksDug
+                BlocksDug = BlocksDug,
+                FinalChainCount = CurrentChainCount,
+                BestChainCount = BestChainCount,
+                CarryMultiplier = CarryValueMultiplier,
+                ChainBonusValue = chainBonusValue,
+                BonusTimeGranted = TotalBonusTimeGranted
             };
-        }
-
-        private long CalculateRescueCost()
-        {
-            var depthFee = Math.Max(0, MaxDepthMeters - StartGridPosition.Y) * 6L;
-            var phaseFee = Phase == DivePhase.Critical ? 400L : 0L;
-            return 900L + depthFee + phaseFee;
         }
     }
 }

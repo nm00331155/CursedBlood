@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CursedBlood.Core;
+using CursedBlood.Enemy;
 using CursedBlood.UI;
 using Godot;
 
@@ -55,12 +56,14 @@ namespace CursedBlood.Player
         private float _sonarPulseTimer;
         private int _lastPlayerSize;
         private int _lastPreviewHash;
-        private SonarReading _sonarReading = new(SonarSignalStrength.None, CellType.Empty, Vector2I.Zero, 0);
+        private SonarReading _sonarReading = new(SonarSignalStrength.None, SonarTargetKind.None, CellType.Empty, Vector2I.Zero, 0, Vector2I.Zero);
         private bool _directionHintsVisible = true;
         private bool _sonarVisualsVisible = true;
+        private bool _movementPaused;
+        private bool _stopRequested;
 
         [Export]
-        public float SwipeThreshold { get; set; } = 32f;
+        public float SwipeThreshold { get; set; } = 24f;
 
         [Export]
         public float DirectionHintRadius { get; set; } = 28f;
@@ -78,11 +81,41 @@ namespace CursedBlood.Player
 
         public PlayerStats Stats { get; set; }
 
+        public EnemyManager EnemyManager { get; set; }
+
         public VirtualPad VirtualPad { get; set; }
 
         public bool InputEnabled { get; set; } = true;
 
-        public bool IsGuarding => Input.IsKeyPressed(Key.Space) || _touchGuarding;
+        public bool IsGuarding => !_movementPaused && (Input.IsKeyPressed(Key.Space) || _touchGuarding);
+
+        public bool AllowNeutralStop { get; set; } = true;
+
+        public float ContextSlowdownMultiplier { get; set; } = 1f;
+
+        public bool MovementPaused
+        {
+            get => _movementPaused;
+            set
+            {
+                if (_movementPaused == value)
+                {
+                    return;
+                }
+
+                _movementPaused = value;
+                if (value)
+                {
+                    _touchGuarding = false;
+                    _pointerHoldTime = 0f;
+                    _bufferedDirection = Vector2I.Zero;
+                    _stopRequested = true;
+                    VirtualPad?.End();
+                }
+
+                QueueRedraw();
+            }
+        }
 
         public Vector2I CurrentDirection => _moveDirection;
 
@@ -104,8 +137,17 @@ namespace CursedBlood.Player
                 return;
             }
 
-            HandleKeyboardInput();
-            UpdateTouchGuard((float)delta);
+            if (!_movementPaused)
+            {
+                HandleKeyboardInput();
+                UpdateTouchGuard((float)delta);
+            }
+            else
+            {
+                _touchGuarding = false;
+                _pointerHoldTime = 0f;
+            }
+
             ProcessMovement((float)delta);
             RefreshMovePreview();
             RefreshDirectionHints();
@@ -134,7 +176,7 @@ namespace CursedBlood.Player
 
         public override void _Input(InputEvent @event)
         {
-            if (!InputEnabled || Stats == null || !Stats.IsAlive)
+            if (!InputEnabled || Stats == null || !Stats.IsAlive || _movementPaused)
             {
                 return;
             }
@@ -200,6 +242,10 @@ namespace CursedBlood.Player
             _pointerHoldTime = 0f;
             _isMoving = false;
             _wasGuarding = false;
+            _movementPaused = false;
+            _stopRequested = false;
+            AllowNeutralStop = true;
+            ContextSlowdownMultiplier = 1f;
             _lastPlayerSize = Stats?.PlayerSize ?? 3;
             _moveDebugInfo.Reset(Stats?.GridPosition ?? Vector2I.Zero, _moveDirection);
             VirtualPad?.End();
@@ -222,6 +268,7 @@ namespace CursedBlood.Player
             _moveEndPosition = Position;
             _isMoving = false;
             _moveTimer = 0f;
+            Chunks.MarkExplored(Stats.GridPosition, Stats.PlayerSize);
             Chunks?.RequestRefresh();
         }
 
@@ -236,7 +283,14 @@ namespace CursedBlood.Player
             _pointerMoved = false;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
+            _stopRequested = false;
             VirtualPad?.End();
+        }
+
+        public void ApplyVirtualPadSettings(VirtualPadSettings settings)
+        {
+            EnsureVirtualPad();
+            VirtualPad?.ApplySettings(settings);
         }
 
         public void SetDirectionHintsVisible(bool visible)
@@ -376,7 +430,17 @@ namespace CursedBlood.Player
                 return;
             }
 
+            if (_movementPaused)
+            {
+                return;
+            }
+
             if (IsGuarding)
+            {
+                return;
+            }
+
+            if (_stopRequested)
             {
                 return;
             }
@@ -398,6 +462,8 @@ namespace CursedBlood.Player
                 return;
             }
 
+            _stopRequested = false;
+
             if (_isMoving)
             {
                 _bufferedDirection = direction;
@@ -414,14 +480,35 @@ namespace CursedBlood.Player
 
         private bool TryStartMove()
         {
-            if (!EvaluateMove(Stats.GridPosition, _moveDirection, _moveDebugInfo, _digBuffer, _occupancyBuffer, out _, out var maxHardness))
+            if (!EvaluateMove(Stats.GridPosition, _moveDirection, _moveDebugInfo, _digBuffer, _occupancyBuffer, out var requiresDig, out var maxHardness))
             {
-                if (_moveDebugInfo.HasBlockedCell)
+                if (_moveDebugInfo.BlockedCellType == CellType.Enemy && EnemyManager != null && EnemyManager.TryResolveDrillContact(Chunks, _moveDebugInfo.DigArea, _moveDirection, Stats))
+                {
+                    if (EvaluateMove(Stats.GridPosition, _moveDirection, _moveDebugInfo, _digBuffer, _occupancyBuffer, out requiresDig, out maxHardness))
+                    {
+                        Chunks?.RequestRefresh();
+                    }
+                    else if (_moveDebugInfo.HasBlockedCell)
+                    {
+                        Chunks?.FlashBlockedCell(_moveDebugInfo.BlockedCell, _moveDebugInfo.BlockReason);
+                    }
+                }
+                else if (_moveDebugInfo.HasBlockedCell)
                 {
                     Chunks?.FlashBlockedCell(_moveDebugInfo.BlockedCell, _moveDebugInfo.BlockReason);
                 }
 
-                return false;
+                if (!_moveDebugInfo.CanMove)
+                {
+                    return false;
+                }
+
+            }
+
+            for (var index = 0; index < _digBuffer.Count; index++)
+            {
+                var cell = _digBuffer[index];
+                Stats.RegisterLoot((CellType)Chunks.GetCell(cell.X, cell.Y), cell.Y);
             }
 
             var dugCount = DigHelper.ExecuteDig(Chunks, _digBuffer);
@@ -435,7 +522,7 @@ namespace CursedBlood.Player
             _moveStartPosition = Chunks.GridToWorldCenter(Stats.GridPosition.X, Stats.GridPosition.Y);
             _moveEndPosition = Chunks.GridToWorldCenter(target.X, target.Y);
             _moveTimer = 0f;
-            _currentMoveDuration = Stats.EffectiveMoveInterval * maxHardness;
+            _currentMoveDuration = Stats.ResolveMoveDuration(maxHardness, requiresDig, ContextSlowdownMultiplier);
             _isMoving = true;
             _moveDebugInfo.AllowMove();
             return true;
@@ -447,7 +534,8 @@ namespace CursedBlood.Player
             Stats.GridPosition = _moveTargetGrid;
             Stats.RegisterDepth(_moveTargetGrid.Y);
             Position = _moveEndPosition;
-            Chunks.UpdateCamera(Stats.GridPosition.Y);
+            Chunks.MarkExplored(Stats.GridPosition, Stats.PlayerSize);
+            Chunks.UpdateCamera(Stats.GridPosition);
             Chunks.RequestRefresh();
         }
 
@@ -757,24 +845,43 @@ namespace CursedBlood.Player
 
         private void HandlePointerPressed(bool pressed, Vector2 position)
         {
-            _pointerActive = pressed;
-            _pointerMoved = false;
-            _touchGuarding = false;
-            _pointerHoldTime = 0f;
-            _pointerStart = position;
-
             if (pressed)
             {
+                if (VirtualPad != null && !VirtualPad.CanBeginAt(position))
+                {
+                    return;
+                }
+
+                _pointerActive = true;
+                _pointerMoved = false;
+                _touchGuarding = false;
+                _pointerHoldTime = 0f;
+                _pointerStart = position;
+                _stopRequested = false;
                 VirtualPad?.Begin(position);
             }
             else
             {
+                _pointerActive = false;
+                _pointerMoved = false;
+                _touchGuarding = false;
+                _pointerHoldTime = 0f;
+                if (AllowNeutralStop)
+                {
+                    _stopRequested = true;
+                }
+
                 VirtualPad?.End();
             }
         }
 
         private void DetectSwipe(Vector2 currentPosition)
         {
+            if (!_pointerActive || _movementPaused)
+            {
+                return;
+            }
+
             VirtualPad?.UpdatePointer(currentPosition);
             var virtualPadDirection = VirtualPad?.GetSnappedDirection() ?? Vector2I.Zero;
             if (virtualPadDirection != Vector2I.Zero)
@@ -805,6 +912,11 @@ namespace CursedBlood.Player
             if (!InputEnabled || Stats == null || !Stats.IsAlive)
             {
                 return $"停止 {directionName}";
+            }
+
+            if (_stopRequested)
+            {
+                return $"停止待機 {directionName}";
             }
 
             if (IsGuarding)

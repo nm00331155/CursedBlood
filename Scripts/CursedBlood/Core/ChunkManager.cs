@@ -9,27 +9,29 @@ namespace CursedBlood.Core
         private const float FlashDuration = 0.14f;
         private const float BlockFlashDuration = 0.16f;
 
-        private readonly Dictionary<int, ChunkData> _chunks = new();
+        private readonly Dictionary<Vector2I, ChunkData> _chunks = new();
+        private readonly Dictionary<long, byte> _cellOverrides = new();
+        private readonly HashSet<long> _exploredCells = new();
         private readonly Dictionary<long, DigFlash> _digFlashes = new();
         private readonly Dictionary<long, BlockFlash> _blockFlashes = new();
-        private readonly List<int> _chunkScratch = new();
+        private readonly List<Vector2I> _chunkScratch = new();
         private readonly List<long> _flashScratch = new();
 
         private TerrainGenerator _generator;
+        private ChainVisualState _chainVisualState;
+        private float _markerPulseTime;
         private int _cameraTopRow;
+        private int _cameraLeftCol;
         private MoveDebugInfo _movePreviewInfo;
         private bool _movePreviewVisible;
         private MoveDebugInfo _moveDebugInfo;
         private bool _moveDebugVisible;
 
         public const int CellSize = 16;
-        public const int ChunkHeight = 16;
-        public const int Columns = 67;
-        public const int VisibleRows = 120;
-        public const float FieldOffsetX = 4f;
-        public const float FieldOffsetY = 200f;
-        public const float FieldWidth = Columns * CellSize;
-        public const float FieldHeight = VisibleRows * CellSize;
+        public const int VisibleColumns = 84;
+        public const int VisibleRows = 108;
+        public const float WorldOriginX = 532f;
+        public const float WorldOriginY = 0f;
 
         public int CameraTopRow => _cameraTopRow;
 
@@ -42,6 +44,8 @@ namespace CursedBlood.Core
         {
             var needsRefresh = UpdateDigFlashes((float)delta);
             needsRefresh |= UpdateBlockFlashes((float)delta);
+            _markerPulseTime += (float)delta;
+            needsRefresh |= _chainVisualState.HasCheckpoint;
 
             if (needsRefresh)
             {
@@ -52,48 +56,25 @@ namespace CursedBlood.Core
         public void Initialize()
         {
             _chunks.Clear();
+            _cellOverrides.Clear();
+            _exploredCells.Clear();
             _digFlashes.Clear();
             _blockFlashes.Clear();
-            _cameraTopRow = 0;
             _generator = new TerrainGenerator(unchecked((int)GD.Randi()));
+            _chainVisualState = default;
+            _markerPulseTime = 0f;
             _movePreviewInfo = null;
             _movePreviewVisible = false;
             _moveDebugInfo = null;
             _moveDebugVisible = false;
-
-            for (var chunkIndex = 0; chunkIndex < 8; chunkIndex++)
-            {
-                GetChunk(chunkIndex);
-            }
-
+            UpdateCamera(PlayerStats.StartGridPosition);
+            MarkExplored(PlayerStats.StartGridPosition, 9);
             QueueRedraw();
-        }
-
-        public ChunkData GetChunk(int chunkIndex)
-        {
-            if (chunkIndex < 0)
-            {
-                return null;
-            }
-
-            if (_chunks.TryGetValue(chunkIndex, out var existingChunk))
-            {
-                return existingChunk;
-            }
-
-            var chunk = new ChunkData(chunkIndex);
-            if (chunkIndex >= 2)
-            {
-                _generator.FillChunk(chunk);
-            }
-
-            _chunks[chunkIndex] = chunk;
-            return chunk;
         }
 
         public bool IsInBounds(int col, int absoluteRow)
         {
-            return col >= 0 && col < Columns && absoluteRow >= 0;
+            return absoluteRow >= PlayerStats.SurfaceRow;
         }
 
         public byte GetCell(int col, int absoluteRow)
@@ -103,31 +84,80 @@ namespace CursedBlood.Core
                 return (byte)CellType.Bedrock;
             }
 
-            var chunkIndex = absoluteRow / ChunkHeight;
-            var localRow = absoluteRow % ChunkHeight;
-            return GetChunk(chunkIndex).GetCell(col, localRow);
+            var key = Pack(col, absoluteRow);
+            if (_cellOverrides.TryGetValue(key, out var overriddenValue))
+            {
+                return overriddenValue;
+            }
+
+            var chunkX = FloorDiv(col, ChunkData.Width);
+            var chunkY = FloorDiv(absoluteRow, ChunkData.Height);
+            var localCol = PositiveMod(col, ChunkData.Width);
+            var localRow = PositiveMod(absoluteRow, ChunkData.Height);
+            return GetChunk(chunkX, chunkY).GetCell(localCol, localRow);
         }
 
         public void SetCell(int col, int absoluteRow, byte value)
+        {
+            SetCellInternal(col, absoluteRow, value, emitDigFlash: true, markExplored: value == (byte)CellType.Empty);
+        }
+
+        public void SetTransientCell(int col, int absoluteRow, byte value)
+        {
+            SetCellInternal(col, absoluteRow, value, emitDigFlash: false, markExplored: value == (byte)CellType.Empty);
+        }
+
+        private void SetCellInternal(int col, int absoluteRow, byte value, bool emitDigFlash, bool markExplored)
         {
             if (!IsInBounds(col, absoluteRow))
             {
                 return;
             }
 
-            var chunkIndex = absoluteRow / ChunkHeight;
-            var localRow = absoluteRow % ChunkHeight;
-            var chunk = GetChunk(chunkIndex);
-            var previous = chunk.GetCell(col, localRow);
+            var previous = GetCell(col, absoluteRow);
             if (previous == value)
             {
                 return;
             }
 
-            chunk.SetCell(col, localRow, value);
-            if (value == (byte)CellType.Empty && previous != (byte)CellType.Empty)
+            var key = Pack(col, absoluteRow);
+            _cellOverrides[key] = value;
+            if (value == (byte)CellType.Empty && markExplored)
             {
-                _digFlashes[Pack(col, absoluteRow)] = new DigFlash((CellType)previous, FlashDuration);
+                _exploredCells.Add(key);
+                if (emitDigFlash && previous != (byte)CellType.Empty)
+                {
+                    _digFlashes[key] = new DigFlash((CellType)previous, FlashDuration);
+                }
+            }
+
+            QueueRedraw();
+        }
+
+        public void MarkExplored(Vector2I center, int size)
+        {
+            var half = size / 2;
+            for (var row = center.Y - half; row <= center.Y + half; row++)
+            {
+                for (var col = center.X - half; col <= center.X + half; col++)
+                {
+                    if (!IsInBounds(col, row))
+                    {
+                        continue;
+                    }
+
+                    _exploredCells.Add(Pack(col, row));
+                }
+            }
+        }
+
+        public void CopyExploredCells(List<Vector2I> buffer)
+        {
+            buffer.Clear();
+            foreach (var packed in _exploredCells)
+            {
+                Unpack(packed, out var col, out var row);
+                buffer.Add(new Vector2I(col, row));
             }
         }
 
@@ -166,34 +196,26 @@ namespace CursedBlood.Core
             }
         }
 
-        public void UpdateCamera(int playerRow)
+        public void SetChainVisualization(ChainVisualState chainVisualState)
         {
-            var newTopRow = Mathf.Max(0, playerRow - (VisibleRows / 2));
-            var changed = newTopRow != _cameraTopRow;
+            if (_chainVisualState == chainVisualState)
+            {
+                return;
+            }
+
+            _chainVisualState = chainVisualState;
+            QueueRedraw();
+        }
+
+        public void UpdateCamera(Vector2I playerCell)
+        {
+            var newLeftCol = playerCell.X - (VisibleColumns / 2);
+            var newTopRow = Mathf.Max(PlayerStats.SurfaceRow, playerCell.Y - (VisibleRows / 2));
+            var changed = newLeftCol != _cameraLeftCol || newTopRow != _cameraTopRow;
+
+            _cameraLeftCol = newLeftCol;
             _cameraTopRow = newTopRow;
-
-            var minChunk = Mathf.Max(0, _cameraTopRow / ChunkHeight - 1);
-            var maxChunk = ((_cameraTopRow + VisibleRows - 1) / ChunkHeight) + 1;
-
-            for (var chunkIndex = minChunk; chunkIndex <= maxChunk; chunkIndex++)
-            {
-                GetChunk(chunkIndex);
-            }
-
-            _chunkScratch.Clear();
-            foreach (var chunkIndex in _chunks.Keys)
-            {
-                if (chunkIndex < minChunk - 1 || chunkIndex > maxChunk + 1)
-                {
-                    _chunkScratch.Add(chunkIndex);
-                }
-            }
-
-            for (var index = 0; index < _chunkScratch.Count; index++)
-            {
-                _chunks.Remove(_chunkScratch[index]);
-                changed = true;
-            }
+            changed |= EnsureChunksForWindow();
 
             if (changed)
             {
@@ -203,12 +225,12 @@ namespace CursedBlood.Core
 
         public Vector2 GridToScreen(int col, int row)
         {
-            return new Vector2(FieldOffsetX + col * CellSize, FieldOffsetY + (row - _cameraTopRow) * CellSize);
+            return new Vector2((col - _cameraLeftCol) * CellSize, (row - _cameraTopRow) * CellSize);
         }
 
         public Vector2 GridToWorld(int col, int row)
         {
-            return new Vector2(FieldOffsetX + col * CellSize, FieldOffsetY + row * CellSize);
+            return new Vector2(WorldOriginX + (col * CellSize), WorldOriginY + (row * CellSize));
         }
 
         public Vector2 GridToWorldCenter(int col, int row)
@@ -233,22 +255,26 @@ namespace CursedBlood.Core
                 return;
             }
 
-            var backgroundTopLeft = GridToWorld(0, _cameraTopRow);
-            DrawRect(new Rect2(backgroundTopLeft.X, backgroundTopLeft.Y, FieldWidth, FieldHeight), new Color(0.08f, 0.08f, 0.10f));
+            var backgroundTopLeft = GridToWorld(_cameraLeftCol, _cameraTopRow);
+            DrawRect(new Rect2(backgroundTopLeft, new Vector2(VisibleColumns * CellSize, VisibleRows * CellSize)), new Color(0.05f, 0.07f, 0.10f));
+            DrawSurfaceBand();
 
-            for (var row = _cameraTopRow; row < _cameraTopRow + VisibleRows; row++)
+            var endCol = _cameraLeftCol + VisibleColumns;
+            var endRow = _cameraTopRow + VisibleRows;
+
+            for (var row = _cameraTopRow; row < endRow; row++)
             {
                 var depthTier = TerrainGenerator.GetDepthTier(row);
                 var runType = CellType.Empty;
-                var runStart = 0;
+                var runStart = _cameraLeftCol;
 
-                for (var col = 0; col <= Columns; col++)
+                for (var col = _cameraLeftCol; col <= endCol; col++)
                 {
-                    var currentType = col < Columns ? (CellType)GetCell(col, row) : CellType.Empty;
-                    if (col == 0)
+                    var currentType = col < endCol ? (CellType)GetCell(col, row) : CellType.Empty;
+                    if (col == _cameraLeftCol)
                     {
                         runType = currentType;
-                        runStart = 0;
+                        runStart = _cameraLeftCol;
                         continue;
                     }
 
@@ -268,6 +294,7 @@ namespace CursedBlood.Core
             }
 
             DrawSpecialMarkers();
+            DrawChainCheckpoint();
             DrawTerrainAccents();
             DrawMovePreview();
             DrawDigFlashes();
@@ -275,14 +302,81 @@ namespace CursedBlood.Core
             DrawMoveDebugOverlay();
         }
 
+        private ChunkData GetChunk(int chunkX, int chunkY)
+        {
+            var chunkCoordinates = new Vector2I(chunkX, chunkY);
+            if (_chunks.TryGetValue(chunkCoordinates, out var chunk))
+            {
+                return chunk;
+            }
+
+            chunk = new ChunkData(chunkX, chunkY);
+            _generator.FillChunk(chunk);
+            _chunks[chunkCoordinates] = chunk;
+            return chunk;
+        }
+
+        private bool EnsureChunksForWindow()
+        {
+            var minCol = _cameraLeftCol - ChunkData.Width;
+            var maxCol = _cameraLeftCol + VisibleColumns + ChunkData.Width;
+            var minRow = Mathf.Max(PlayerStats.SurfaceRow, _cameraTopRow - ChunkData.Height);
+            var maxRow = _cameraTopRow + VisibleRows + ChunkData.Height;
+
+            var minChunkX = FloorDiv(minCol, ChunkData.Width);
+            var maxChunkX = FloorDiv(maxCol, ChunkData.Width);
+            var minChunkY = FloorDiv(minRow, ChunkData.Height);
+            var maxChunkY = FloorDiv(maxRow, ChunkData.Height);
+            var changed = false;
+
+            for (var chunkY = minChunkY; chunkY <= maxChunkY; chunkY++)
+            {
+                for (var chunkX = minChunkX; chunkX <= maxChunkX; chunkX++)
+                {
+                    if (!_chunks.ContainsKey(new Vector2I(chunkX, chunkY)))
+                    {
+                        GetChunk(chunkX, chunkY);
+                        changed = true;
+                    }
+                }
+            }
+
+            _chunkScratch.Clear();
+            foreach (var coordinates in _chunks.Keys)
+            {
+                if (coordinates.X < minChunkX - 1 || coordinates.X > maxChunkX + 1 || coordinates.Y < minChunkY - 1 || coordinates.Y > maxChunkY + 1)
+                {
+                    _chunkScratch.Add(coordinates);
+                }
+            }
+
+            for (var index = 0; index < _chunkScratch.Count; index++)
+            {
+                _chunks.Remove(_chunkScratch[index]);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private void DrawSurfaceBand()
+        {
+            var topLeft = GridToWorld(_cameraLeftCol, PlayerStats.SurfaceRow);
+            var bandHeight = CellSize * 3f;
+            DrawRect(new Rect2(new Vector2(topLeft.X, topLeft.Y - bandHeight), new Vector2(VisibleColumns * CellSize, bandHeight)), new Color(0.10f, 0.13f, 0.17f, 0.72f));
+            DrawLine(new Vector2(topLeft.X, topLeft.Y), new Vector2(topLeft.X + (VisibleColumns * CellSize), topLeft.Y), new Color(0.94f, 0.92f, 0.72f, 0.88f), 2f);
+        }
+
         private void DrawSpecialMarkers()
         {
-            for (var row = _cameraTopRow; row < _cameraTopRow + VisibleRows; row++)
+            var endCol = _cameraLeftCol + VisibleColumns;
+            var endRow = _cameraTopRow + VisibleRows;
+            for (var row = _cameraTopRow; row < endRow; row++)
             {
-                for (var col = 0; col < Columns; col++)
+                for (var col = _cameraLeftCol; col < endCol; col++)
                 {
                     var type = (CellType)GetCell(col, row);
-                    if (type != CellType.RecoveryPoint && type != CellType.Ore)
+                    if (type != CellType.RecoveryPoint && type != CellType.Ore && type != CellType.Enemy)
                     {
                         continue;
                     }
@@ -290,12 +384,19 @@ namespace CursedBlood.Core
                     var rect = new Rect2(GridToWorld(col, row), new Vector2(CellSize, CellSize));
                     if (type == CellType.RecoveryPoint)
                     {
-                        DrawCircle(rect.GetCenter(), CellSize * 0.28f, new Color(0.92f, 1f, 0.98f, 0.9f));
-                        DrawArc(rect.GetCenter(), CellSize * 0.36f, 0f, Mathf.Tau, 24, new Color(0.12f, 0.48f, 0.52f, 0.95f), 2f);
+                        DrawCircle(rect.GetCenter(), CellSize * 0.30f, new Color(0.90f, 1f, 0.98f, 0.92f));
+                        DrawArc(rect.GetCenter(), CellSize * 0.38f, 0f, Mathf.Tau, 24, new Color(0.14f, 0.54f, 0.56f, 0.96f), 2f);
+                    }
+                    else if (type == CellType.Enemy)
+                    {
+                        DrawArc(rect.GetCenter(), CellSize * 0.26f, 0f, Mathf.Tau, 18, new Color(1f, 0.74f, 0.66f, 0.96f), 1.4f);
+                        DrawLine(rect.Position + new Vector2(4f, 4f), rect.End - new Vector2(4f, 4f), new Color(1f, 0.92f, 0.88f, 0.70f), 1.2f);
+                        DrawLine(rect.Position + new Vector2(CellSize - 4f, 4f), rect.Position + new Vector2(4f, CellSize - 4f), new Color(1f, 0.62f, 0.58f, 0.78f), 1.2f);
                     }
                     else
                     {
-                        DrawLine(rect.Position + new Vector2(3f, 3f), rect.End - new Vector2(3f, 3f), new Color(1f, 0.95f, 0.72f, 0.72f), 1.4f);
+                        DrawLine(rect.Position + new Vector2(3f, CellSize * 0.5f), rect.End - new Vector2(3f, CellSize * 0.5f), new Color(1f, 0.96f, 0.70f, 0.78f), 1.6f);
+                        DrawLine(rect.Position + new Vector2(CellSize * 0.5f, 3f), rect.Position + new Vector2(CellSize * 0.5f, CellSize - 3f), new Color(1f, 0.96f, 0.70f, 0.64f), 1.4f);
                     }
                 }
             }
@@ -303,9 +404,11 @@ namespace CursedBlood.Core
 
         private void DrawTerrainAccents()
         {
-            for (var row = _cameraTopRow; row < _cameraTopRow + VisibleRows; row++)
+            var endCol = _cameraLeftCol + VisibleColumns;
+            var endRow = _cameraTopRow + VisibleRows;
+            for (var row = _cameraTopRow; row < endRow; row++)
             {
-                for (var col = 0; col < Columns; col++)
+                for (var col = _cameraLeftCol; col < endCol; col++)
                 {
                     var type = (CellType)GetCell(col, row);
                     if (type == CellType.Empty)
@@ -318,32 +421,54 @@ namespace CursedBlood.Core
             }
         }
 
+        private void DrawChainCheckpoint()
+        {
+            if (!_chainVisualState.HasCheckpoint || !IsVisibleCell(_chainVisualState.CheckpointCell.X, _chainVisualState.CheckpointCell.Y))
+            {
+                return;
+            }
+
+            var center = GridToWorld(_chainVisualState.CheckpointCell.X, _chainVisualState.CheckpointCell.Y) + new Vector2(CellSize * 0.5f, CellSize * 0.5f);
+            var pulse = 0.5f + (0.5f * Mathf.Sin(_markerPulseTime * 6f));
+            var radius = (CellSize * 0.54f) + (pulse * 4f);
+            var urgency = _chainVisualState.TimeRatio < 0.35f ? 1f : 0f;
+            var outline = urgency > 0f
+                ? new Color(1f, 0.56f, 0.40f, 0.96f)
+                : new Color(1f, 0.86f, 0.36f, 0.96f);
+            var fill = urgency > 0f
+                ? new Color(1f, 0.46f, 0.28f, 0.18f)
+                : new Color(1f, 0.82f, 0.24f, 0.16f);
+
+            DrawCircle(center, radius * 0.92f, fill);
+            DrawArc(center, radius, 0f, Mathf.Tau, 36, outline, 2.2f);
+            DrawArc(center, radius + 4f + (pulse * 2f), 0f, Mathf.Tau * Mathf.Clamp(_chainVisualState.TimeRatio, 0.12f, 1f), 28, new Color(outline, 0.62f), 1.8f);
+            DrawCircle(center, 2.4f + (pulse * 1.2f), new Color(1f, 0.98f, 0.84f, 0.96f));
+        }
+
         private void DrawCellAccent(int col, int row, CellType type)
         {
             var rect = new Rect2(GridToWorld(col, row), new Vector2(CellSize, CellSize));
             switch (type)
             {
                 case CellType.Dirt:
-                    DrawLine(rect.Position + new Vector2(2f, 4f), rect.Position + new Vector2(CellSize - 2f, 4f), new Color(1f, 0.93f, 0.72f, 0.18f), 1.1f);
-                    DrawLine(rect.Position + new Vector2(3f, CellSize - 4f), rect.Position + new Vector2(CellSize - 3f, CellSize - 5f), new Color(0.33f, 0.21f, 0.11f, 0.24f), 1f);
+                    DrawLine(rect.Position + new Vector2(2f, 4f), rect.Position + new Vector2(CellSize - 2f, 4f), new Color(1f, 0.92f, 0.72f, 0.20f), 1.1f);
+                    DrawLine(rect.Position + new Vector2(3f, CellSize - 4f), rect.Position + new Vector2(CellSize - 3f, CellSize - 5f), new Color(0.32f, 0.20f, 0.10f, 0.28f), 1f);
                     break;
                 case CellType.Stone:
-                    DrawLine(rect.Position + new Vector2(2f, 5f), rect.Position + new Vector2(CellSize - 2f, 5f), new Color(0.95f, 0.98f, 1f, 0.22f), 1.1f);
-                    DrawLine(rect.Position + new Vector2(4f, 10f), rect.Position + new Vector2(CellSize - 4f, 10f), new Color(0.08f, 0.10f, 0.14f, 0.34f), 1f);
+                    DrawLine(rect.Position + new Vector2(2f, 5f), rect.Position + new Vector2(CellSize - 2f, 5f), new Color(0.92f, 0.98f, 1f, 0.24f), 1.1f);
+                    DrawLine(rect.Position + new Vector2(4f, 10f), rect.Position + new Vector2(CellSize - 4f, 10f), new Color(0.06f, 0.10f, 0.16f, 0.32f), 1f);
                     break;
                 case CellType.HardRock:
-                    DrawRect(rect.Grow(-1.5f), new Color(0.82f, 0.90f, 1f, 0.34f), false, 1.2f);
+                    DrawRect(rect.Grow(-1.4f), new Color(0.80f, 0.92f, 1f, 0.34f), false, 1.2f);
                     DrawLine(rect.Position + new Vector2(3f, 3f), rect.Position + new Vector2(CellSize - 3f, CellSize - 3f), new Color(0.94f, 0.98f, 1f, 0.18f), 1f);
-                    DrawLine(rect.Position + new Vector2(CellSize - 3f, 3f), rect.Position + new Vector2(3f, CellSize - 3f), new Color(0.03f, 0.04f, 0.06f, 0.28f), 1f);
+                    DrawLine(rect.Position + new Vector2(CellSize - 3f, 3f), rect.Position + new Vector2(3f, CellSize - 3f), new Color(0.02f, 0.04f, 0.07f, 0.28f), 1f);
                     break;
                 case CellType.Bedrock:
                     DrawRect(rect, new Color(0.92f, 0.74f, 0.96f, 0.24f), false, 1.8f);
                     DrawRect(rect.Grow(-4f), new Color(1f, 0.94f, 1f, 0.16f), false, 1f);
                     break;
                 case CellType.Ore:
-                    DrawLine(rect.Position + new Vector2(3f, CellSize * 0.5f), rect.Position + new Vector2(CellSize - 3f, CellSize * 0.5f), new Color(1f, 0.96f, 0.72f, 0.36f), 1.2f);
-                    DrawLine(rect.Position + new Vector2(CellSize * 0.5f, 3f), rect.Position + new Vector2(CellSize * 0.5f, CellSize - 3f), new Color(1f, 0.96f, 0.72f, 0.32f), 1.2f);
-                    DrawArc(rect.GetCenter(), CellSize * 0.22f, 0f, Mathf.Tau, 18, new Color(1f, 0.98f, 0.76f, 0.3f), 1.2f);
+                    DrawArc(rect.GetCenter(), CellSize * 0.22f, 0f, Mathf.Tau, 18, new Color(1f, 0.98f, 0.76f, 0.30f), 1.2f);
                     break;
                 case CellType.RecoveryPoint:
                     DrawRect(rect.Grow(-1f), new Color(0.82f, 1f, 0.94f, 0.24f), false, 1.1f);
@@ -353,8 +478,8 @@ namespace CursedBlood.Core
                     DrawLine(rect.Position + new Vector2(CellSize - 3f, 3f), rect.Position + new Vector2(3f, CellSize - 3f), new Color(1f, 0.84f, 0.56f, 0.22f), 1.1f);
                     break;
                 case CellType.Enemy:
-                case CellType.Boss:
-                    DrawRect(rect.Grow(-1f), new Color(1f, 0.58f, 0.58f, 0.24f), false, 1.2f);
+                    DrawRect(rect.Grow(-1.8f), new Color(1f, 0.58f, 0.50f, 0.22f), false, 1.2f);
+                    DrawCircle(rect.GetCenter(), CellSize * 0.12f, new Color(1f, 0.88f, 0.80f, 0.44f));
                     break;
             }
         }
@@ -518,7 +643,7 @@ namespace CursedBlood.Core
             foreach (var entry in _digFlashes)
             {
                 Unpack(entry.Key, out var col, out var row);
-                if (row < _cameraTopRow || row >= _cameraTopRow + VisibleRows)
+                if (!IsVisibleCell(col, row))
                 {
                     continue;
                 }
@@ -535,7 +660,7 @@ namespace CursedBlood.Core
             foreach (var entry in _blockFlashes)
             {
                 Unpack(entry.Key, out var col, out var row);
-                if (row < _cameraTopRow || row >= _cameraTopRow + VisibleRows)
+                if (!IsVisibleCell(col, row))
                 {
                     continue;
                 }
@@ -575,7 +700,7 @@ namespace CursedBlood.Core
 
         private void DrawDebugCell(Vector2I cell, Color fillColor, Color outlineColor, float outlineWidth)
         {
-            if (cell.Y < _cameraTopRow || cell.Y >= _cameraTopRow + VisibleRows || !IsInBounds(cell.X, cell.Y))
+            if (!IsVisibleCell(cell.X, cell.Y) || !IsInBounds(cell.X, cell.Y))
             {
                 return;
             }
@@ -595,6 +720,11 @@ namespace CursedBlood.Core
             DrawRect(rect, CellTypeUtil.GetColor(type, depthTier));
         }
 
+        private bool IsVisibleCell(int col, int row)
+        {
+            return row >= _cameraTopRow && row < _cameraTopRow + VisibleRows && col >= _cameraLeftCol && col < _cameraLeftCol + VisibleColumns;
+        }
+
         private static Color GetBlockFlashColor(MoveBlockReason reason)
         {
             return reason switch
@@ -603,6 +733,17 @@ namespace CursedBlood.Core
                 MoveBlockReason.OutOfBounds => new Color(1f, 0.44f, 0.30f, 0.78f),
                 _ => new Color(1f, 0.22f, 0.22f, 0.78f)
             };
+        }
+
+        private static int FloorDiv(int value, int divisor)
+        {
+            return value >= 0 ? value / divisor : -(((-value) + divisor - 1) / divisor);
+        }
+
+        private static int PositiveMod(int value, int divisor)
+        {
+            var result = value % divisor;
+            return result < 0 ? result + divisor : result;
         }
 
         private static long Pack(int col, int row)

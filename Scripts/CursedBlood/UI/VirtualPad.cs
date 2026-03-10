@@ -4,7 +4,9 @@ namespace CursedBlood.UI
 {
     public sealed class VirtualPadSettings
     {
-        public float BaseOpacity { get; set; } = 0.34f;
+        public float BaseOpacity { get; set; } = 0.30f;
+
+        public float InactiveBaseOpacity { get; set; } = 0.12f;
 
         public float KnobOpacity { get; set; } = 0.72f;
 
@@ -21,6 +23,14 @@ namespace CursedBlood.UI
         public float DirectionHysteresisDegrees { get; set; } = 12f;
 
         public float GuideOpacity { get; set; } = 0.16f;
+
+        public bool UseFixedOrigin { get; set; } = true;
+
+        public Vector2 FixedOrigin { get; set; } = new Vector2(184f, 1706f);
+
+        public float ActivationRadius { get; set; } = 152f;
+
+        public bool AlwaysShowBase { get; set; } = true;
 
         public static VirtualPadSettings CreateDefault()
         {
@@ -49,20 +59,37 @@ namespace CursedBlood.UI
             SetAnchorsPreset(LayoutPreset.FullRect);
             MouseFilter = MouseFilterEnum.Ignore;
             ZIndex = 100;
-            Visible = false;
+            Visible = Settings.AlwaysShowBase;
         }
 
         public void ApplySettings(VirtualPadSettings settings)
         {
             Settings = settings ?? VirtualPadSettings.CreateDefault();
+            if (!_active)
+            {
+                _origin = Settings.UseFixedOrigin ? Settings.FixedOrigin : _origin;
+                _currentPosition = _origin;
+                Visible = Settings.AlwaysShowBase;
+            }
+
             QueueRedraw();
+        }
+
+        public bool CanBeginAt(Vector2 position)
+        {
+            if (!Settings.UseFixedOrigin)
+            {
+                return true;
+            }
+
+            return position.DistanceTo(Settings.FixedOrigin) <= Settings.ActivationRadius;
         }
 
         public void Begin(Vector2 origin)
         {
             _active = true;
-            _origin = origin;
-            _currentPosition = origin;
+            _origin = Settings.UseFixedOrigin ? Settings.FixedOrigin : origin;
+            _currentPosition = _origin;
             _currentOctant = -1;
             _snappedDirection = Vector2I.Zero;
             Visible = true;
@@ -87,7 +114,7 @@ namespace CursedBlood.UI
             _currentPosition = _origin;
             _currentOctant = -1;
             _snappedDirection = Vector2I.Zero;
-            Visible = false;
+            Visible = Settings.AlwaysShowBase;
             QueueRedraw();
         }
 
@@ -109,12 +136,12 @@ namespace CursedBlood.UI
 
         public override void _Draw()
         {
-            if (!_active)
+            if (!_active && !Settings.AlwaysShowBase)
             {
                 return;
             }
 
-            var baseAlpha = Mathf.Clamp(Settings.BaseOpacity, 0f, 1f);
+            var baseAlpha = Mathf.Clamp(_active ? Settings.BaseOpacity : Settings.InactiveBaseOpacity, 0f, 1f);
             var knobAlpha = Mathf.Clamp(Settings.KnobOpacity, 0f, 1f);
             var baseColor = new Color(0.94f, 0.97f, 1f, baseAlpha);
             var rimColor = new Color(0.75f, 0.86f, 1f, Mathf.Clamp(baseAlpha + 0.12f, 0f, 1f));
@@ -134,6 +161,12 @@ namespace CursedBlood.UI
                 var start = _origin + (vector * (Settings.DeadZoneRadius + 8f));
                 var end = _origin + (vector * (Settings.BaseRadius - 10f));
                 DrawLine(start, end, guideColor, octant == _currentOctant ? 2.8f : 1.4f);
+            }
+
+            if (!_active)
+            {
+                DrawCircle(_origin, Settings.KnobRadius * 0.46f, new Color(0.90f, 0.96f, 1f, baseAlpha * 0.85f));
+                return;
             }
 
             DrawCircle(knobCenter, Settings.KnobRadius, knobColor);

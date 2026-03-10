@@ -1,6 +1,6 @@
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
-    [string]$GodotExe = 'D:\code_workspace\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64_console.exe',
+    [string]$GodotExe = '',
     [ValidateSet('debug', 'release')]
     [string]$BuildType = 'debug',
     [string]$ExportPreset = 'Android',
@@ -133,7 +133,29 @@ if ([string]::IsNullOrWhiteSpace($ApkPath)) {
     $ApkPath = Join-Path -Path $ProjectRoot -ChildPath 'CursedBlood.apk'
 }
 
+if ([string]::IsNullOrWhiteSpace($GodotExe)) {
+    $godotCandidates = @(
+        'D:\copilot_script\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64_console.exe',
+        'D:\code_workspace\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64_console.exe'
+    )
+
+    $GodotExe = $godotCandidates |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($GodotExe)) {
+        $godotFromPath =
+            Get-Command -Name 'godot', 'godot4', 'Godot_v4.6.1-stable_mono_win64_console.exe' -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty Source
+
+        if (-not [string]::IsNullOrWhiteSpace($godotFromPath)) {
+            $GodotExe = $godotFromPath
+        }
+    }
+}
+
 $projectFile = Join-Path -Path $ProjectRoot -ChildPath 'CursedBlood.csproj'
+$androidBuildTemplatePath = Join-Path -Path $ProjectRoot -ChildPath 'android\build'
 $tempRoot = 'D:\temp\CursedBlood'
 $stdoutLogPath = Join-Path -Path $tempRoot -ChildPath 'godot_android_export_stdout.log'
 $stderrLogPath = Join-Path -Path $tempRoot -ChildPath 'godot_android_export_stderr.log'
@@ -184,9 +206,18 @@ if ($KillAdbBeforeExport -and $null -ne $adbCommand) {
 
 $initialApkState = Get-FileState -Path $ApkPath
 $exportSwitch = if ($BuildType -eq 'release') { '--export-release' } else { '--export-debug' }
+$installAndroidBuildTemplate = -not (Test-Path -LiteralPath $androidBuildTemplatePath)
 $exportArguments = @(
     '--headless',
-    '--path', $ProjectRoot,
+    '--path', $ProjectRoot
+)
+
+if ($installAndroidBuildTemplate) {
+    Write-Step 'Android build template is missing in the project. Installing it before export.'
+    $exportArguments += '--install-android-build-template'
+}
+
+$exportArguments += @(
     $exportSwitch,
     $ExportPreset,
     $ApkPath
@@ -201,7 +232,6 @@ $exportSucceeded = $false
 while ($true) {
     $exportProcess.Refresh()
     $stdoutTail = Read-TextTail -Path $stdoutLogPath
-    $stderrTail = Read-TextTail -Path $stderrLogPath
     $normalizedStdoutTail = Remove-AnsiEscapeSequences -Text $stdoutTail
 
     if (-not $doneMarkerSeen -and $normalizedStdoutTail.Contains('[ DONE ] export')) {
