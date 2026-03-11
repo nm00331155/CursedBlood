@@ -47,6 +47,7 @@ namespace CursedBlood.Player
         private Vector2 _pointerStart;
         private bool _pointerActive;
         private bool _pointerMoved;
+        private bool _pointerUsesVirtualPad;
         private bool _touchGuarding;
         private bool _isMoving;
         private bool _wasGuarding;
@@ -108,6 +109,7 @@ namespace CursedBlood.Player
                 {
                     _touchGuarding = false;
                     _pointerHoldTime = 0f;
+                    _pointerUsesVirtualPad = false;
                     _bufferedDirection = Vector2I.Zero;
                     _stopRequested = true;
                     VirtualPad?.End();
@@ -236,6 +238,7 @@ namespace CursedBlood.Player
             _currentMoveDuration = 0f;
             _pointerActive = false;
             _pointerMoved = false;
+            _pointerUsesVirtualPad = false;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
             _isMoving = false;
@@ -279,6 +282,7 @@ namespace CursedBlood.Player
         {
             _pointerActive = false;
             _pointerMoved = false;
+            _pointerUsesVirtualPad = false;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
             _stopRequested = true;
@@ -417,7 +421,8 @@ namespace CursedBlood.Player
             {
                 _moveTimer += delta;
                 var progress = _currentMoveDuration <= 0f ? 1f : Mathf.Clamp(_moveTimer / _currentMoveDuration, 0f, 1f);
-                Position = _moveStartPosition.Lerp(_moveEndPosition, progress);
+                var easedProgress = EaseMoveProgress(progress);
+                Position = _moveStartPosition.Lerp(_moveEndPosition, easedProgress);
 
                 if (progress >= 1f)
                 {
@@ -848,6 +853,7 @@ namespace CursedBlood.Player
                 var useVirtualPad = VirtualPad != null && VirtualPad.CanBeginAt(position);
                 _pointerActive = true;
                 _pointerMoved = false;
+                _pointerUsesVirtualPad = useVirtualPad;
                 _touchGuarding = false;
                 _pointerHoldTime = 0f;
                 _pointerStart = position;
@@ -859,10 +865,13 @@ namespace CursedBlood.Player
             else
             {
                 _pointerActive = false;
+                var pointerMoved = _pointerMoved;
+                var pointerUsedVirtualPad = _pointerUsesVirtualPad;
                 _pointerMoved = false;
+                _pointerUsesVirtualPad = false;
                 _touchGuarding = false;
                 _pointerHoldTime = 0f;
-                if (AllowNeutralStop)
+                if (AllowNeutralStop && (pointerUsedVirtualPad || !pointerMoved))
                 {
                     _stopRequested = true;
                 }
@@ -878,10 +887,15 @@ namespace CursedBlood.Player
                 return;
             }
 
-            VirtualPad?.UpdatePointer(currentPosition);
-            var virtualPadDirection = VirtualPad?.GetSnappedDirection() ?? Vector2I.Zero;
-            if (virtualPadDirection != Vector2I.Zero)
+            if (_pointerUsesVirtualPad)
             {
+                VirtualPad?.UpdatePointer(currentPosition);
+                var virtualPadDirection = VirtualPad?.GetSnappedDirection() ?? Vector2I.Zero;
+                if (virtualPadDirection == Vector2I.Zero)
+                {
+                    return;
+                }
+
                 _pointerMoved = true;
                 _touchGuarding = false;
                 _pointerHoldTime = 0f;
@@ -900,6 +914,12 @@ namespace CursedBlood.Player
             _pointerHoldTime = 0f;
             _pointerStart = currentPosition;
             RequestDirection(SnapToOctant(delta));
+        }
+
+        private static float EaseMoveProgress(float progress)
+        {
+            var clampedProgress = Mathf.Clamp(progress, 0f, 1f);
+            return clampedProgress * clampedProgress * (3f - (2f * clampedProgress));
         }
 
         private string BuildMovementStatusText()

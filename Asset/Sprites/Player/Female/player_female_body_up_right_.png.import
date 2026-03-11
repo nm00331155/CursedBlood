@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cdt4b4sw152ya"
-path="res://.godot/imported/player_female_body_up_right.png-15c2d9e236069b77239b657b12295484.ctex"
+uid="uid://dh3g4wt8ytk4g"
+path="res://.godot/imported/player_female_body_up_right_.png-f7506316ac7e3650ac7b58c4a04db0c6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Asset/Sprites/Player/Female/player_female_body_up_right.png"
-dest_files=["res://.godot/imported/player_female_body_up_right.png-15c2d9e236069b77239b657b12295484.ctex"]
+source_file="res://Asset/Sprites/Player/Female/player_female_body_up_right_.png"
+dest_files=["res://.godot/imported/player_female_body_up_right_.png-f7506316ac7e3650ac7b58c4a04db0c6.ctex"]
 
 [params]
 

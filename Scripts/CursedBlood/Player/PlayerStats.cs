@@ -54,7 +54,7 @@ namespace CursedBlood.Player
 
         public int MaxDepthMeters => Mathf.Max(0, MaxDepthRow - StartGridPosition.Y);
 
-        public float BaseMoveInterval { get; } = 0.0125f;
+        public float BaseMoveInterval { get; } = 0.01625f;
 
         public int DigWidth { get; } = 7;
 

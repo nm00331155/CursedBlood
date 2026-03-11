@@ -69,6 +69,8 @@ namespace CursedBlood.Player
         };
 
         private readonly Dictionary<string, Vector2> _drillOffsets = new();
+        private readonly Dictionary<string, Vector2> _bodyFrameSizes = new();
+        private readonly Dictionary<string, Vector2> _drillFrameSizes = new();
         private AnimatedSprite2D _bodySprite;
         private AnimatedSprite2D _drillSprite;
         private Texture2D _bodyFallbackSheet;
@@ -127,7 +129,7 @@ namespace CursedBlood.Player
             }
 
             CurrentDirectionName = animationName;
-            ApplyScale(Math.Max(1, playerSize));
+            ApplyScale(Math.Max(1, playerSize), animationName);
             ApplySpriteAnimation(_bodySprite, animationName, isMoving);
             ApplySpriteAnimation(_drillSprite, animationName, isMoving);
             _drillSprite.Position = GetDrillOffset(animationName);
@@ -147,14 +149,15 @@ namespace CursedBlood.Player
                 return;
             }
 
+            HasMissingAssets = false;
             _bodySprite = GetNodeOrNull<AnimatedSprite2D>(BodySpriteNodeName) ?? CreateSpriteNode(BodySpriteNodeName, 0);
             _drillSprite = GetNodeOrNull<AnimatedSprite2D>(DrillSpriteNodeName) ?? CreateSpriteNode(DrillSpriteNodeName, 1);
 
-            _bodySprite.SpriteFrames = BuildSpriteFrames(isBody: true);
-            _drillSprite.SpriteFrames = BuildSpriteFrames(isBody: false);
+            _bodySprite.SpriteFrames = BuildSpriteFrames(isBody: true, _bodyFrameSizes);
+            _drillSprite.SpriteFrames = BuildSpriteFrames(isBody: false, _drillFrameSizes);
 
             BuildOffsetMap();
-            ApplyScale(5);
+            ApplyScale(5, DownAnimation);
             ApplySpriteAnimation(_bodySprite, DownAnimation, false);
             ApplySpriteAnimation(_drillSprite, DownAnimation, false);
             _drillSprite.Position = GetDrillOffset(DownAnimation);
@@ -175,9 +178,10 @@ namespace CursedBlood.Player
             return sprite;
         }
 
-        private SpriteFrames BuildSpriteFrames(bool isBody)
+        private SpriteFrames BuildSpriteFrames(bool isBody, Dictionary<string, Vector2> frameSizes)
         {
             var frames = new SpriteFrames();
+            frameSizes.Clear();
             for (var index = 0; index < AnimationNames.Length; index++)
             {
                 var animationName = AnimationNames[index];
@@ -185,76 +189,79 @@ namespace CursedBlood.Player
                 frames.SetAnimationLoop(animationName, true);
                 frames.SetAnimationSpeed(animationName, AnimationFps);
 
-                var texture = LoadSpriteSheet(isBody, animationName, out var resolvedPath);
-                ValidateSheetDimensions(texture, resolvedPath, isBody, animationName);
-                AddSheetFrames(frames, animationName, texture);
+                var texture = LoadSpriteTexture(isBody, animationName);
+                frameSizes[animationName] = AddFrames(frames, animationName, texture);
             }
 
             return frames;
         }
 
-        private Texture2D LoadSpriteSheet(bool isBody, string animationName, out string resolvedPath)
+        private Texture2D LoadSpriteTexture(bool isBody, string animationName)
         {
             var fileToken = isBody ? animationName : DrillDirectionToFileToken[animationName];
             var templates = isBody ? BodyPathTemplates : DrillPathTemplates;
-            var attemptedPaths = new List<string>(templates.Length);
+            var attemptedPaths = new List<string>(templates.Length * (isBody ? 2 : 1));
 
             for (var index = 0; index < templates.Length; index++)
             {
-                var candidatePath = templates[index].Replace("{0}", fileToken, StringComparison.Ordinal);
-                attemptedPaths.Add(candidatePath);
-                if (!ResourceLoader.Exists(candidatePath))
+                var tokenVariants = isBody
+                    ? new[] { fileToken, string.Concat(fileToken, "_") }
+                    : new[] { fileToken };
+                for (var variantIndex = 0; variantIndex < tokenVariants.Length; variantIndex++)
                 {
-                    continue;
-                }
+                    var candidatePath = templates[index].Replace("{0}", tokenVariants[variantIndex], StringComparison.Ordinal);
+                    if (!attemptedPaths.Contains(candidatePath))
+                    {
+                        attemptedPaths.Add(candidatePath);
+                    }
 
-                var texture = ResourceLoader.Load<Texture2D>(candidatePath);
-                if (texture != null)
-                {
-                    resolvedPath = candidatePath;
-                    return texture;
-                }
+                    if (!ResourceLoader.Exists(candidatePath))
+                    {
+                        continue;
+                    }
 
-                GD.PushError($"Failed to load {(isBody ? "body" : "drill")} sprite sheet: {candidatePath}");
+                    var texture = ResourceLoader.Load<Texture2D>(candidatePath);
+                    if (texture != null)
+                    {
+                        return texture;
+                    }
+
+                    GD.PushError($"Failed to load {(isBody ? "body" : "drill")} sprite texture: {candidatePath}");
+                }
             }
 
             HasMissingAssets = true;
-            resolvedPath = string.Empty;
-            GD.PushError($"Missing {(isBody ? "body" : "drill")} sprite sheet for '{animationName}'. Checked: {string.Join(", ", attemptedPaths)}");
+            GD.PushError($"Missing {(isBody ? "body" : "drill")} sprite texture for '{animationName}'. Checked: {string.Join(", ", attemptedPaths)}");
             return GetFallbackSheet(isBody);
         }
 
-        private void ValidateSheetDimensions(Texture2D texture, string resolvedPath, bool isBody, string animationName)
+        private static Vector2 AddFrames(SpriteFrames frames, string animationName, Texture2D texture)
         {
-            if (texture == null)
+            if (IsLegacySpriteSheet(texture))
             {
-                return;
+                for (var row = 0; row < FramesPerAxis; row++)
+                {
+                    for (var col = 0; col < FramesPerAxis; col++)
+                    {
+                        var atlasTexture = new AtlasTexture
+                        {
+                            Atlas = texture,
+                            Region = new Rect2(col * FrameSize, row * FrameSize, FrameSize, FrameSize)
+                        };
+                        frames.AddFrame(animationName, atlasTexture);
+                    }
+                }
+
+                return new Vector2(FrameSize, FrameSize);
             }
 
-            var expectedSize = FrameSize * FramesPerAxis;
-            if (texture.GetWidth() == expectedSize && texture.GetHeight() == expectedSize)
-            {
-                return;
-            }
-
-            var sourceName = string.IsNullOrEmpty(resolvedPath) ? animationName : resolvedPath;
-            GD.PushWarning($"Unexpected {(isBody ? "body" : "drill")} sprite sheet size for {sourceName}. Expected {expectedSize}x{expectedSize}, got {texture.GetWidth()}x{texture.GetHeight()}.");
+            frames.AddFrame(animationName, texture);
+            return new Vector2(texture.GetWidth(), texture.GetHeight());
         }
 
-        private static void AddSheetFrames(SpriteFrames frames, string animationName, Texture2D texture)
+        private static bool IsLegacySpriteSheet(Texture2D texture)
         {
-            for (var row = 0; row < FramesPerAxis; row++)
-            {
-                for (var col = 0; col < FramesPerAxis; col++)
-                {
-                    var atlasTexture = new AtlasTexture
-                    {
-                        Atlas = texture,
-                        Region = new Rect2(col * FrameSize, row * FrameSize, FrameSize, FrameSize)
-                    };
-                    frames.AddFrame(animationName, atlasTexture);
-                }
-            }
+            return texture != null && texture.GetWidth() == FrameSize * FramesPerAxis && texture.GetHeight() == FrameSize * FramesPerAxis;
         }
 
         private Texture2D GetFallbackSheet(bool isBody)
@@ -289,13 +296,21 @@ namespace CursedBlood.Player
             _drillOffsets[UpRightAnimation] = UpRightDrillOffset;
         }
 
-        private void ApplyScale(int playerSize)
+        private void ApplyScale(int playerSize, string animationName)
         {
             var worldSize = playerSize * ChunkManager.CellSize;
-            var scale = worldSize / (float)FrameSize;
-            var scaleVector = new Vector2(scale, scale);
-            _bodySprite.Scale = scaleVector;
-            _drillSprite.Scale = scaleVector;
+            _bodySprite.Scale = ResolveScale(_bodyFrameSizes, animationName, worldSize);
+            _drillSprite.Scale = ResolveScale(_drillFrameSizes, animationName, worldSize);
+        }
+
+        private static Vector2 ResolveScale(IReadOnlyDictionary<string, Vector2> frameSizes, string animationName, float worldSize)
+        {
+            var frameSize = frameSizes.TryGetValue(animationName, out var size)
+                ? size
+                : new Vector2(FrameSize, FrameSize);
+            var referenceSize = Mathf.Max(1f, Mathf.Max(frameSize.X, frameSize.Y));
+            var scale = worldSize / referenceSize;
+            return new Vector2(scale, scale);
         }
 
         private static void ApplySpriteAnimation(AnimatedSprite2D sprite, string animationName, bool isMoving)
