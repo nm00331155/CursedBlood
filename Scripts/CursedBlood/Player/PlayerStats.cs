@@ -52,7 +52,7 @@ namespace CursedBlood.Player
 
         public int MaxDepthPixels => MaxDepthMeters * ChunkManager.CellSize;
 
-        public int MaxDepthMeters => Mathf.Max(0, MaxDepthRow - SurfaceRow);
+        public int MaxDepthMeters => Mathf.Max(0, MaxDepthRow - StartGridPosition.Y);
 
         public float BaseMoveInterval { get; } = 0.0125f;
 
@@ -78,6 +78,8 @@ namespace CursedBlood.Player
 
         public bool HasLeftSurface { get; private set; }
 
+        public bool HasDiveStarted { get; private set; }
+
         public int CurrentChainCount { get; private set; }
 
         public int BestChainCount { get; private set; }
@@ -96,7 +98,7 @@ namespace CursedBlood.Player
 
         public int RemainingDiveSeconds => Mathf.CeilToInt(RemainingDiveTime);
 
-        public int CurrentDepthMeters => Mathf.Max(0, GridPosition.Y - SurfaceRow);
+        public int CurrentDepthMeters => Mathf.Max(0, GridPosition.Y - StartGridPosition.Y);
 
         public string PhaseLabel => Phase switch
         {
@@ -153,6 +155,7 @@ namespace CursedBlood.Player
             ReturnedSafely = false;
             Rescued = false;
             HasLeftSurface = false;
+            HasDiveStarted = false;
             CurrentChainCount = 0;
             BestChainCount = 0;
             CarryValueMultiplier = 1f;
@@ -169,6 +172,11 @@ namespace CursedBlood.Player
 
         public void AdvanceTime(float delta)
         {
+            if (!HasDiveStarted)
+            {
+                return;
+            }
+
             CurrentDiveTime = Mathf.Min(MaxDiveTime, CurrentDiveTime + Mathf.Max(0f, delta));
             if (HazardDebuffTimeRemaining <= 0f)
             {
@@ -208,6 +216,11 @@ namespace CursedBlood.Player
             {
                 HasLeftSurface = true;
             }
+        }
+
+        public void BeginDive()
+        {
+            HasDiveStarted = true;
         }
 
         public long RegisterLoot(CellType type, int row)

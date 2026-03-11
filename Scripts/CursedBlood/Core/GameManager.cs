@@ -50,7 +50,7 @@ namespace CursedBlood.Core
 
         [ExportGroup("HUD")]
         [Export]
-        public float HudFontScale { get; set; } = 1.40f;
+        public float HudFontScale { get; set; } = 1.44f;
 
         [Export]
         public Vector2 HudMinimapSize { get; set; } = new Vector2(250f, 224f);
@@ -178,16 +178,16 @@ namespace CursedBlood.Core
         public Vector2 VirtualPadFixedOrigin { get; set; } = new Vector2(184f, 1706f);
 
         [Export]
-        public float VirtualPadActivationRadius { get; set; } = 152f;
+        public float VirtualPadActivationRadius { get; set; } = 184f;
 
         [Export]
-        public float VirtualPadBaseRadius { get; set; } = 94f;
+        public float VirtualPadBaseRadius { get; set; } = 106f;
 
         [Export]
-        public float VirtualPadMaxRadius { get; set; } = 92f;
+        public float VirtualPadMaxRadius { get; set; } = 104f;
 
         [Export]
-        public float VirtualPadKnobRadius { get; set; } = 38f;
+        public float VirtualPadKnobRadius { get; set; } = 42f;
 
         [Export]
         public bool AlwaysShowVirtualPadBase { get; set; } = true;
@@ -437,7 +437,6 @@ namespace CursedBlood.Core
             _recoveryPoints.Reset(_chunks, PlayerStats.StartGridPosition);
             _chain.Reset(_chunks, _playerStats.GridPosition, _playerStats);
             _enemies.Reset(_chunks, _playerStats.GridPosition);
-            DigHelper.ExecuteDig(_chunks, DigHelper.GetCenteredArea(_playerStats.GridPosition, 9));
             _chunks.MarkExplored(_playerStats.GridPosition, 9);
             _chunks.UpdateCamera(_playerStats.GridPosition);
             _chunks.SetChainVisualization(_chain.BuildVisualState());
@@ -446,6 +445,10 @@ namespace CursedBlood.Core
             _playerController.Stats = _playerStats;
             _playerController.EnemyManager = _enemies;
             _playerController.InputEnabled = true;
+
+            _hud.Initialize(_playerStats, _chunks, _recoveryPoints, _chain);
+            _playerController.VirtualPad = _hud.VirtualPadControl;
+            ApplyVirtualPadLayout();
             _playerController.Reset();
 
             _camera.Target = _playerController;
@@ -453,10 +456,10 @@ namespace CursedBlood.Core
             _camera.MakeCurrent();
             _camera.SnapToTarget();
 
-            _hud.Initialize(_playerStats, _chunks, _recoveryPoints, _chain);
             UpdateViewportLayout(force: true);
             _hud.SetReturnState(false, false, 0f);
             _hud.SetChainState(_playerStats.CurrentChainCount, _playerStats.BestChainCount, _playerStats.CarryValueMultiplier, _chain.TimeRemainingSeconds, _chain.ChainTimeLimitSeconds, _chain.HasActiveCheckpoint);
+            _hud.ShowNotification("↓入力で潜行開始");
             _sonar.Reset();
             SetDiveWorldVisible(true);
             ApplyVisualizationSettings();
@@ -466,29 +469,39 @@ namespace CursedBlood.Core
 
         private void UpdateDive(float delta)
         {
-            _playerStats.AdvanceTime(delta);
-
-            _chain.Update(delta, _chunks, _playerStats.GridPosition, _playerStats);
-            if (_chain.TryConsumeNotification(out var chainNotification))
+            var diveStarted = _playerStats.HasDiveStarted;
+            if (diveStarted)
             {
-                _hud.ShowNotification(chainNotification);
+                _playerStats.AdvanceTime(delta);
+
+                _chain.Update(delta, _chunks, _playerStats.GridPosition, _playerStats);
+                if (_chain.TryConsumeNotification(out var chainNotification))
+                {
+                    _hud.ShowNotification(chainNotification);
+                }
+
+                _recoveryPoints.UpdateSpawn(_chunks, _playerStats.GridPosition, _playerStats.MaxDepthRow, _playerStats.CurrentChainCount);
             }
 
-            _recoveryPoints.UpdateSpawn(_chunks, _playerStats.GridPosition, _playerStats.MaxDepthRow, _playerStats.CurrentChainCount);
-            var recoveryState = _recoveryPoints.UpdateAvailability(_playerStats.GridPosition, _playerStats.PlayerSize, delta, _playerStats.CurrentDepthMeters, _playerStats.CurrentChainCount);
+            var recoveryState = diveStarted
+                ? _recoveryPoints.UpdateAvailability(_playerStats.GridPosition, _playerStats.PlayerSize, delta, _playerStats.CurrentDepthMeters, _playerStats.CurrentChainCount)
+                : RecoveryReturnState.Unavailable;
             if (recoveryState.JustActivated)
             {
                 _hud.ShowNotification("回収ポイント確保 / 帰還ボタンで撤収可能");
             }
 
-            _enemies.Update(delta, _chunks, _playerStats.GridPosition, _playerStats.PlayerSize, _playerStats);
-            if (_enemies.TryConsumeNotification(out var enemyNotification))
+            if (diveStarted)
             {
-                _hud.ShowNotification(enemyNotification);
+                _enemies.Update(delta, _chunks, _playerStats.GridPosition, _playerStats.PlayerSize, _playerStats);
+                if (_enemies.TryConsumeNotification(out var enemyNotification))
+                {
+                    _hud.ShowNotification(enemyNotification);
+                }
             }
 
             _sonar.Update(
-                delta,
+                diveStarted ? delta : 0f,
                 _chunks,
                 _playerStats.GridPosition,
                 _chain.HasActiveCheckpoint ? _chain.ActiveCheckpoint : null,
@@ -507,7 +520,7 @@ namespace CursedBlood.Core
             _chunks.SetChainVisualization(_chain.BuildVisualState());
             _chunks.UpdateCamera(_playerStats.GridPosition);
 
-            if (!_playerStats.IsAlive)
+            if (diveStarted && !_playerStats.IsAlive)
             {
                 EndDive(_playerStats.IsTimeExpired ? DiveEndReason.RescueTimeout : DiveEndReason.RescueDowned, _playerStats.IsTimeExpired ? "酸素切れ" : "行動不能");
             }

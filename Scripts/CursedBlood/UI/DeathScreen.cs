@@ -6,7 +6,7 @@ namespace CursedBlood.UI
 {
     public partial class DeathScreen : CanvasLayer
     {
-        private static readonly Vector2 PanelDesignPosition = new(110f, 260f);
+        private static readonly Vector2 PanelDesignSize = new(860f, 1110f);
 
         private bool _built;
         private ColorRect _overlay;
@@ -58,7 +58,22 @@ namespace CursedBlood.UI
             }
 
             CanvasLayoutHelper.StretchOverlay(this, _overlay);
-            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+            var panelRect = CanvasLayoutHelper.ResolveCenteredPanelRect(this, PanelDesignSize, 0.86f, 0.72f, 44f, 48f);
+            _panel.Position = panelRect.Position;
+            _panel.Size = panelRect.Size;
+
+            var scale = CanvasLayoutHelper.GetScaleFactors(panelRect.Size, PanelDesignSize);
+            CanvasLayoutHelper.ApplyScaledLayout(_titleLabel, new Vector2(80f, 54f), new Vector2(700f, 64f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_causeLabel, new Vector2(80f, 136f), new Vector2(700f, 44f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_summaryLabel, new Vector2(120f, 260f), new Vector2(620f, 460f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_hintLabel, new Vector2(80f, 860f), new Vector2(700f, 68f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_restartButton, new Vector2(250f, 954f), new Vector2(360f, 88f), scale);
+
+            _titleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(54, scale, 28, 78));
+            _causeLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(30, scale, 16, 44));
+            _summaryLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 18, 48));
+            _hintLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(24, scale, 14, 34));
+            _restartButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(32, scale, 18, 44));
         }
 
         public override void _UnhandledInput(InputEvent @event)
@@ -106,8 +121,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = PanelDesignPosition,
-                Size = new Vector2(860f, 1110f)
+                Position = Vector2.Zero,
+                Size = PanelDesignSize
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -131,16 +146,17 @@ namespace CursedBlood.UI
             _causeLabel = CreateLabel(new Vector2(80f, 136f), new Vector2(700f, 44f), 30, HorizontalAlignment.Center);
             _panel.AddChild(_causeLabel);
 
-            _summaryLabel = CreateLabel(new Vector2(120f, 260f), new Vector2(620f, 420f), 36, HorizontalAlignment.Left);
+            _summaryLabel = CreateLabel(new Vector2(120f, 260f), new Vector2(620f, 460f), 36, HorizontalAlignment.Left);
+            _summaryLabel.VerticalAlignment = VerticalAlignment.Top;
             _panel.AddChild(_summaryLabel);
 
-            _hintLabel = CreateLabel(new Vector2(80f, 870f), new Vector2(700f, 66f), 24, HorizontalAlignment.Center);
+            _hintLabel = CreateLabel(new Vector2(80f, 860f), new Vector2(700f, 68f), 24, HorizontalAlignment.Center);
             _hintLabel.Text = "タップ / クリック / キー入力で次の潜行へ";
             _panel.AddChild(_hintLabel);
 
             _restartButton = new Button
             {
-                Position = new Vector2(250f, 960f),
+                Position = new Vector2(250f, 954f),
                 Size = new Vector2(360f, 88f),
                 Text = "次の潜行へ"
             };

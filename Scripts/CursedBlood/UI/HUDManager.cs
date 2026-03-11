@@ -36,20 +36,24 @@ namespace CursedBlood.UI
         private string _debugText = string.Empty;
         private string _notificationText = string.Empty;
         private float _notificationTimeRemaining;
-        private float _fontScale = 1.40f;
+        private float _fontScale = 1.44f;
         private float _minimapOpacity = 0.80f;
         private Vector2 _minimapSize = new(250f, 224f);
         private GameplayLayoutMetrics _layoutMetrics;
         private ReturnMode _returnMode;
         private float _returnRetentionSeconds;
         private SonarReading _sonarReading = new(SonarSignalStrength.None, SonarTargetKind.None, CellType.Empty, Vector2I.Zero, 0, Vector2I.Zero);
+        private float _oxygenBarCurrentWidth = OxygenBarWidth;
         private Control _root;
         private Panel _infoPanel;
+        private Label _oxygenCaptionLabel;
+        private ColorRect _oxygenBarBackground;
         private ColorRect _oxygenBarFill;
         private Label _diveLabel;
         private Label _timerLabel;
         private Label _depthLabel;
         private Label _economyLabel;
+        private Label _debtLabel;
         private Label _salvageLabel;
         private Label _phaseLabel;
         private Label _statusLabel;
@@ -66,11 +70,21 @@ namespace CursedBlood.UI
         private Panel _returnDialog;
         private ColorRect _dialogBackdrop;
         private MiniMapOverlay _miniMap;
+        private VirtualPad _virtualPad;
         private Button _returnButton;
 
         public bool IsReturnDialogVisible => _returnDialog != null && _returnDialog.Visible;
 
         public event Action<DiveEndReason> ReturnConfirmed;
+
+        public VirtualPad VirtualPadControl
+        {
+            get
+            {
+                BuildUiIfNeeded();
+                return _virtualPad;
+            }
+        }
 
         public override void _Ready()
         {
@@ -119,22 +133,93 @@ namespace CursedBlood.UI
             _root.Position = layoutMetrics.VisibleRect.Position;
             _root.Size = layoutMetrics.ScreenSize;
 
-            _infoPanel.Position = ReferenceInfoPanelRect.Position;
-            _infoPanel.Size = ReferenceInfoPanelRect.Size;
+            var mapPanelSize = GameplayLayoutCalculator.ResolveMapPanelSize(_minimapSize);
+            var topOverlayHeight = GameplayLayoutCalculator.ResolveTopOverlayHeight(_minimapSize);
 
-            var mapPanelSize = new Vector2(_minimapSize.X + 24f, _minimapSize.Y + 54f);
+            _infoPanel.Position = ReferenceInfoPanelRect.Position;
+            _infoPanel.Size = new Vector2(
+                Mathf.Max(624f, layoutMetrics.ScreenSize.X - layoutMetrics.ReservedRight - (ReferenceInfoPanelRect.Position.X * 2f)),
+                topOverlayHeight);
+
+            var infoInnerWidth = _infoPanel.Size.X - 40f;
+            var rightColumnWidth = Mathf.Clamp(infoInnerWidth * 0.36f, 228f, 324f);
+            var leftColumnWidth = Mathf.Max(268f, infoInnerWidth - rightColumnWidth - 18f);
+            var leftX = 20f;
+            var rightX = leftX + leftColumnWidth + 18f;
+            _oxygenBarCurrentWidth = Mathf.Clamp(leftColumnWidth - 64f, 188f, 356f);
+
+            _diveLabel.Position = new Vector2(leftX, 16f);
+            _diveLabel.Size = new Vector2(leftColumnWidth, 28f);
+            _diveLabel.AddThemeFontSizeOverride("font_size", ScaleFont(20));
+
+            _timerLabel.Position = new Vector2(rightX, 8f);
+            _timerLabel.Size = new Vector2(rightColumnWidth, 52f);
+            _timerLabel.AddThemeFontSizeOverride("font_size", ScaleFont(36));
+
+            _depthLabel.Position = new Vector2(leftX, 50f);
+            _depthLabel.Size = new Vector2(leftColumnWidth, 40f);
+            _depthLabel.AddThemeFontSizeOverride("font_size", ScaleFont(30));
+
+            _economyLabel.Position = new Vector2(rightX, 60f);
+            _economyLabel.Size = new Vector2(rightColumnWidth, 26f);
+            _economyLabel.AddThemeFontSizeOverride("font_size", ScaleFont(18));
+
+            _debtLabel.Position = new Vector2(rightX, 88f);
+            _debtLabel.Size = new Vector2(rightColumnWidth, 26f);
+            _debtLabel.AddThemeFontSizeOverride("font_size", ScaleFont(18));
+
+            _salvageLabel.Position = new Vector2(rightX, 116f);
+            _salvageLabel.Size = new Vector2(rightColumnWidth, 20f);
+            _salvageLabel.AddThemeFontSizeOverride("font_size", ScaleFont(15));
+
+            _oxygenCaptionLabel.Position = new Vector2(leftX, 96f);
+            _oxygenCaptionLabel.Size = new Vector2(56f, 24f);
+            _oxygenCaptionLabel.AddThemeFontSizeOverride("font_size", ScaleFont(16));
+
+            _oxygenBarBackground.Position = new Vector2(leftX + 60f, 102f);
+            _oxygenBarBackground.Size = new Vector2(_oxygenBarCurrentWidth, 16f);
+            _oxygenBarFill.Position = _oxygenBarBackground.Position;
+            _oxygenBarFill.Size = new Vector2(_oxygenBarCurrentWidth, 16f);
+
+            _phaseLabel.Position = new Vector2(rightX, 144f);
+            _phaseLabel.Size = new Vector2(rightColumnWidth, 22f);
+            _phaseLabel.AddThemeFontSizeOverride("font_size", ScaleFont(17));
+
+            _chainLabel.Position = new Vector2(leftX, 140f);
+            _chainLabel.Size = new Vector2(leftColumnWidth, 22f);
+            _chainLabel.AddThemeFontSizeOverride("font_size", ScaleFont(18));
+
+            _chainTargetLabel.Position = new Vector2(leftX, 172f);
+            _chainTargetLabel.Size = new Vector2(infoInnerWidth, 24f);
+            _chainTargetLabel.AddThemeFontSizeOverride("font_size", ScaleFont(16));
+
+            _statusLabel.Position = new Vector2(leftX, 206f);
+            _statusLabel.Size = new Vector2(infoInnerWidth, Mathf.Max(54f, _infoPanel.Size.Y - 222f));
+            _statusLabel.AddThemeFontSizeOverride("font_size", ScaleFont(15));
+
             var mapPanelRect = GameplayLayoutCalculator.AlignTopRight(layoutMetrics, mapPanelSize, MapPanelRightMargin, MapPanelTopMargin);
             _mapPanel.Position = mapPanelRect.Position;
             _mapPanel.Size = mapPanelRect.Size;
             _miniMap.Position = new Vector2(12f, 36f);
             _miniMap.Size = _minimapSize;
 
-            _notificationLabel.Position = new Vector2((layoutMetrics.ScreenSize.X - ReferenceNotificationRect.Size.X) * 0.5f, ReferenceNotificationRect.Position.Y);
-            _notificationLabel.Size = ReferenceNotificationRect.Size;
+            var notificationWidth = Mathf.Min(ReferenceNotificationRect.Size.X, layoutMetrics.ScreenSize.X - 160f);
+            _notificationLabel.Position = new Vector2((layoutMetrics.ScreenSize.X - notificationWidth) * 0.5f, _infoPanel.Position.Y + _infoPanel.Size.Y + 12f);
+            _notificationLabel.Size = new Vector2(notificationWidth, ReferenceNotificationRect.Size.Y);
+            _notificationLabel.AddThemeFontSizeOverride("font_size", ScaleFont(20));
 
+            _sonarPanel.Size = new Vector2(Mathf.Clamp(layoutMetrics.PlayfieldRect.Size.X * 0.82f, 420f, 700f), 70f);
             _sonarPanel.Position = GameplayLayoutCalculator.AlignBottomCenter(layoutMetrics, _sonarPanel.Size, SonarBottomMargin).Position;
+            _sonarLabel.Position = new Vector2(20f, 12f);
+            _sonarLabel.Size = new Vector2(_sonarPanel.Size.X - 40f, 42f);
+            _sonarLabel.AddThemeFontSizeOverride("font_size", ScaleFont(20));
+
             _returnPanel.Position = GameplayLayoutCalculator.AlignBottomRight(layoutMetrics, _returnPanel.Size, ReturnRightMargin, ReturnBottomMargin).Position;
-            _debugPanel.Position = new Vector2(18f, 218f);
+            _returnButton.AddThemeFontSizeOverride("font_size", ScaleFont(22));
+            _returnHintLabel.AddThemeFontSizeOverride("font_size", ScaleFont(14));
+
+            _debugPanel.Position = new Vector2(18f, _notificationLabel.Position.Y + _notificationLabel.Size.Y + 10f);
+            _debugLabel.AddThemeFontSizeOverride("font_size", ScaleFont(14));
 
             _dialogBackdrop.Position = Vector2.Zero;
             _dialogBackdrop.Size = layoutMetrics.ScreenSize;
@@ -163,7 +248,7 @@ namespace CursedBlood.UI
             _notificationLabel.Text = _notificationText;
 
             var oxygenRatio = _stats.OxygenRatio;
-            _oxygenBarFill.Size = new Vector2(OxygenBarWidth * oxygenRatio, 14f);
+            _oxygenBarFill.Size = new Vector2(_oxygenBarCurrentWidth * oxygenRatio, _oxygenBarFill.Size.Y);
             _oxygenBarFill.Color = oxygenRatio switch
             {
                 < 0.18f => new Color(0.96f, 0.28f, 0.22f),
@@ -171,32 +256,40 @@ namespace CursedBlood.UI
                 _ => new Color(0.24f, 0.86f, 0.74f)
             };
 
+            var waitingForStart = !_stats.HasDiveStarted;
             _diveLabel.Text = $"潜行 {_stats.DiveCount:00}";
             _timerLabel.Text = $"{_stats.RemainingDiveSeconds}s";
-            _depthLabel.Text = $"深度 {_stats.CurrentDepthMeters}m";
-            _economyLabel.Text = $"所持 {_stats.CurrentMoney:N0} / 借金 {_stats.CurrentDebt:N0}";
+            _depthLabel.Text = waitingForStart ? "地上開始" : $"深度 {_stats.CurrentDepthMeters}m";
+            _economyLabel.Text = $"所持 {_stats.CurrentMoney:N0}";
+            _debtLabel.Text = $"借金 {_stats.CurrentDebt:N0}";
             _salvageLabel.Text = $"今回 {_stats.SalvageValue:N0} / 掘削 {_stats.BlocksDug} / 鉱石 {_stats.OresCollected}";
-            _phaseLabel.Text = $"{_stats.PhaseLabel} x{_stats.PhaseMultiplier:0.00}";
-            _phaseLabel.AddThemeColorOverride("font_color", _stats.Phase switch
-            {
-                DivePhase.Stable => new Color(0.74f, 0.97f, 0.90f),
-                DivePhase.Worn => new Color(1.00f, 0.88f, 0.46f),
-                _ => new Color(1.00f, 0.62f, 0.62f)
-            });
+            _phaseLabel.Text = waitingForStart ? "準備中" : $"{_stats.PhaseLabel} x{_stats.PhaseMultiplier:0.00}";
+            _phaseLabel.AddThemeColorOverride("font_color", waitingForStart
+                ? new Color(0.82f, 0.92f, 1.00f)
+                : _stats.Phase switch
+                {
+                    DivePhase.Stable => new Color(0.74f, 0.97f, 0.90f),
+                    DivePhase.Worn => new Color(1.00f, 0.88f, 0.46f),
+                    _ => new Color(1.00f, 0.62f, 0.62f)
+                });
 
             _chainLabel.Text = $"CHAIN {_stats.CurrentChainCount} / BEST {_stats.BestChainCount} / x{_stats.CarryValueMultiplier:0.000}";
-            _chainTargetLabel.Text = _chainManager != null && _chainManager.HasActiveCheckpoint
-                ? (_stats.CurrentChainCount > 0 ? $"次の下降目標 {_chainManager.TimeRemainingSeconds:0.0}s" : "下降目標を通過してチェイン開始")
-                : "下降目標を探索中";
+            _chainTargetLabel.Text = waitingForStart
+                ? "↓入力で潜行開始"
+                : _chainManager != null && _chainManager.HasActiveCheckpoint
+                    ? (_stats.CurrentChainCount > 0 ? $"次目標 {_chainManager.TimeRemainingSeconds:0.0}s" : "下降目標通過でチェイン開始")
+                    : "下降目標を探索中";
 
-            _statusLabel.Text = _returnMode switch
-            {
-                ReturnMode.Recovery => _returnRetentionSeconds > 0f
-                    ? $"回収ポイント確保 / 帰還可能 {_returnRetentionSeconds:0.0}s"
-                    : "回収ポイント確保 / 帰還可能",
-                ReturnMode.Surface => "地上帰還可能 / ボタンで撤収",
-                _ => "地中を切り開きつつ、回収ポイントと下降目標を追う"
-            };
+            _statusLabel.Text = waitingForStart
+                ? "地上待機。ゲームパッドやスワイプで潜行開始。"
+                : _returnMode switch
+                {
+                    ReturnMode.Recovery => _returnRetentionSeconds > 0f
+                        ? $"回収ポイント確保 / 帰還可能 {_returnRetentionSeconds:0.0}s"
+                        : "回収ポイント確保 / 帰還可能",
+                    ReturnMode.Surface => "地上帰還可能 / 帰還ボタンで撤収",
+                    _ => "掘削を進めつつ、回収ポイントと下降目標を追う"
+                };
             if (!string.IsNullOrWhiteSpace(_stats.ActiveHazardLabel))
             {
                 _statusLabel.Text += $" / {_stats.ActiveHazardLabel}";
@@ -313,26 +406,29 @@ namespace CursedBlood.UI
             _economyLabel = CreateLabel(new Vector2(238f, 58f), new Vector2(318f, 28f), ScaleFont(22), HorizontalAlignment.Right);
             _infoPanel.AddChild(_economyLabel);
 
-            _salvageLabel = CreateLabel(new Vector2(238f, 88f), new Vector2(318f, 24f), ScaleFont(18), HorizontalAlignment.Right);
+            _debtLabel = CreateLabel(new Vector2(238f, 86f), new Vector2(318f, 28f), ScaleFont(22), HorizontalAlignment.Right);
+            _infoPanel.AddChild(_debtLabel);
+
+            _salvageLabel = CreateLabel(new Vector2(238f, 114f), new Vector2(318f, 24f), ScaleFont(18), HorizontalAlignment.Right);
             _infoPanel.AddChild(_salvageLabel);
 
-            var oxygenCaption = CreateLabel(new Vector2(22f, 118f), new Vector2(60f, 20f), ScaleFont(16), HorizontalAlignment.Left);
-            oxygenCaption.Text = "酸素";
-            _infoPanel.AddChild(oxygenCaption);
+            _oxygenCaptionLabel = CreateLabel(new Vector2(22f, 118f), new Vector2(60f, 20f), ScaleFont(16), HorizontalAlignment.Left);
+            _oxygenCaptionLabel.Text = "酸素";
+            _infoPanel.AddChild(_oxygenCaptionLabel);
 
-            var oxygenBarBackground = new ColorRect
+            _oxygenBarBackground = new ColorRect
             {
                 Position = new Vector2(78f, 122f),
                 Size = new Vector2(OxygenBarWidth, 14f),
                 Color = new Color(0.17f, 0.23f, 0.29f, 0.9f),
                 MouseFilter = Control.MouseFilterEnum.Ignore
             };
-            _infoPanel.AddChild(oxygenBarBackground);
+            _infoPanel.AddChild(_oxygenBarBackground);
 
             _oxygenBarFill = new ColorRect
             {
-                Position = oxygenBarBackground.Position,
-                Size = oxygenBarBackground.Size,
+                Position = _oxygenBarBackground.Position,
+                Size = _oxygenBarBackground.Size,
                 Color = new Color(0.24f, 0.86f, 0.74f),
                 MouseFilter = Control.MouseFilterEnum.Ignore
             };
@@ -344,13 +440,14 @@ namespace CursedBlood.UI
             _chainLabel = CreateLabel(new Vector2(22f, 150f), new Vector2(300f, 22f), ScaleFont(17), HorizontalAlignment.Left);
             _infoPanel.AddChild(_chainLabel);
 
-            _chainTargetLabel = CreateLabel(new Vector2(334f, 146f), new Vector2(222f, 24f), ScaleFont(16), HorizontalAlignment.Right);
+            _chainTargetLabel = CreateLabel(new Vector2(22f, 168f), new Vector2(534f, 22f), ScaleFont(16), HorizontalAlignment.Center);
             _infoPanel.AddChild(_chainTargetLabel);
 
-            _statusLabel = CreateLabel(new Vector2(22f, 168f), new Vector2(534f, 16f), ScaleFont(15), HorizontalAlignment.Left);
+            _statusLabel = CreateLabel(new Vector2(22f, 198f), new Vector2(534f, 50f), ScaleFont(15), HorizontalAlignment.Left);
+            _statusLabel.VerticalAlignment = VerticalAlignment.Top;
             _infoPanel.AddChild(_statusLabel);
 
-            _mapPanel = CreatePanel(new Vector2(812f, 18f), new Vector2(_minimapSize.X + 24f, _minimapSize.Y + 54f));
+            _mapPanel = CreatePanel(new Vector2(812f, 18f), GameplayLayoutCalculator.ResolveMapPanelSize(_minimapSize));
             _root.AddChild(_mapPanel);
 
             var mapLabel = CreateLabel(new Vector2(12f, 10f), new Vector2(180f, 22f), ScaleFont(18), HorizontalAlignment.Left);
@@ -363,6 +460,12 @@ namespace CursedBlood.UI
                 Size = _minimapSize
             };
             _mapPanel.AddChild(_miniMap);
+
+            _virtualPad = new VirtualPad
+            {
+                Name = "VirtualPad"
+            };
+            _root.AddChild(_virtualPad);
 
             _notificationLabel = CreateLabel(ReferenceNotificationRect.Position, ReferenceNotificationRect.Size, ScaleFont(22), HorizontalAlignment.Center);
             _notificationLabel.AddThemeColorOverride("font_color", new Color(0.99f, 0.92f, 0.70f));

@@ -17,13 +17,13 @@ namespace CursedBlood.Camera
         private float _lastLoggedEffectiveZoom = -1f;
 
         [Export]
-        public float GameplayZoomScale { get; set; } = 0.28f;
+        public float GameplayZoomScale { get; set; } = 0.56f;
 
         [Export]
-        public float TightZoomScale { get; set; } = 0.22f;
+        public float TightZoomScale { get; set; } = 0.44f;
 
         [Export]
-        public float DefaultZoomScale { get; set; } = 0.38f;
+        public float DefaultZoomScale { get; set; } = 0.76f;
 
         [Export]
         public float FollowLerpSpeed { get; set; } = 14.0f;
@@ -113,9 +113,13 @@ namespace CursedBlood.Camera
                 ? GameplayLayoutCalculator.ResolveCameraWorldOffset(_layoutMetrics, effectiveZoom)
                 : Vector2.Zero;
             var targetPosition = Target.GetCurrentWorldPosition() + PlayfieldOffset + layoutOffset + lookAhead;
-            var halfView = GetViewportRect().Size * effectiveZoom * 0.5f;
+            var viewportSize = _hasLayout ? _layoutMetrics.ScreenSize : GetViewportRect().Size;
+            var halfView = viewportSize / Mathf.Max(0.01f, effectiveZoom) * 0.5f;
             var surfaceWorldY = ChunkManager.WorldOriginY + (PlayerStats.SurfaceRow * ChunkManager.CellSize);
-            var minY = surfaceWorldY + halfView.Y - SurfaceClampPadding;
+            var surfaceClampPadding = _hasLayout
+                ? Mathf.Max(SurfaceClampPadding, _layoutMetrics.ReservedTop + 40f)
+                : SurfaceClampPadding;
+            var minY = surfaceWorldY + halfView.Y - surfaceClampPadding;
             targetPosition.Y = Mathf.Max(minY, targetPosition.Y);
             return targetPosition;
         }
@@ -124,7 +128,7 @@ namespace CursedBlood.Camera
         {
             return _hasLayout
                 ? GameplayLayoutCalculator.ResolveProjection(_layoutMetrics, GetActiveZoomScale()).CameraZoomScale
-                : GetActiveZoomScale();
+                : Mathf.Clamp(1f / Mathf.Max(GetActiveZoomScale(), 0.01f), 0.35f, 6.0f);
         }
 
         private float GetActiveZoomScale()
@@ -139,7 +143,7 @@ namespace CursedBlood.Camera
 
         private void ApplyZoom(float zoomScale)
         {
-            var clampedZoom = Mathf.Clamp(zoomScale, 0.18f, 1.0f);
+            var clampedZoom = Mathf.Clamp(zoomScale, 0.35f, 6.0f);
             var zoomVector = new Vector2(clampedZoom, clampedZoom);
             if (Zoom == zoomVector)
             {

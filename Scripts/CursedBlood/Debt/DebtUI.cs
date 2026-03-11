@@ -7,12 +7,13 @@ namespace CursedBlood.Debt
 {
     public partial class DebtUI : CanvasLayer
     {
-        private static readonly Vector2 PanelDesignPosition = new(74f, 140f);
+        private static readonly Vector2 PanelDesignSize = new(932f, 1380f);
 
         private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
         private Label _titleLabel;
+        private ScrollContainer _summaryScroll;
         private Label _summaryLabel;
         private Label _optionHintLabel;
         private readonly Button[] _optionButtons = new Button[4];
@@ -41,6 +42,7 @@ namespace CursedBlood.Debt
                 $"精算開始時借金: {preview.DebtAfterInterest:N0}\n" +
                 $"現在所持金: {preview.MoneyBeforePayment:N0}";
             _optionHintLabel.Text = preview.SummaryText;
+            CanvasLayoutHelper.UpdateScrollableLabelContent(_summaryLabel, _summaryScroll);
 
             for (var index = 0; index < _optionButtons.Length; index++)
             {
@@ -65,7 +67,25 @@ namespace CursedBlood.Debt
             }
 
             CanvasLayoutHelper.StretchOverlay(this, _overlay);
-            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+            var panelRect = CanvasLayoutHelper.ResolveCenteredPanelRect(this, PanelDesignSize, 0.88f, 0.90f, 40f, 44f);
+            _panel.Position = panelRect.Position;
+            _panel.Size = panelRect.Size;
+
+            var scale = CanvasLayoutHelper.GetScaleFactors(panelRect.Size, PanelDesignSize);
+            CanvasLayoutHelper.ApplyScaledLayout(_titleLabel, new Vector2(70f, 42f), new Vector2(792f, 68f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_summaryScroll, new Vector2(104f, 142f), new Vector2(724f, 430f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_optionHintLabel, new Vector2(104f, 596f), new Vector2(724f, 104f), scale);
+
+            for (var index = 0; index < _optionButtons.Length; index++)
+            {
+                CanvasLayoutHelper.ApplyScaledLayout(_optionButtons[index], new Vector2(104f, 736f + (index * 154f)), new Vector2(724f, 132f), scale);
+                _optionButtons[index].AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 16, 40));
+            }
+
+            _titleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(58, scale, 34, 84));
+            _summaryLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(34, scale, 18, 48));
+            _optionHintLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 16, 40));
+            CanvasLayoutHelper.UpdateScrollableLabelContent(_summaryLabel, _summaryScroll);
         }
 
         private void BuildUiIfNeeded()
@@ -85,8 +105,8 @@ namespace CursedBlood.Debt
 
             _panel = new Panel
             {
-                Position = PanelDesignPosition,
-                Size = new Vector2(932f, 1380f)
+                Position = Vector2.Zero,
+                Size = PanelDesignSize
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -107,18 +127,27 @@ namespace CursedBlood.Debt
             _titleLabel = CreateLabel(new Vector2(70f, 42f), new Vector2(792f, 68f), 58, HorizontalAlignment.Center);
             _panel.AddChild(_titleLabel);
 
-            _summaryLabel = CreateLabel(new Vector2(104f, 142f), new Vector2(724f, 390f), 36, HorizontalAlignment.Left);
-            _panel.AddChild(_summaryLabel);
+            _summaryScroll = new ScrollContainer
+            {
+                Position = new Vector2(104f, 142f),
+                Size = new Vector2(724f, 430f)
+            };
+            _panel.AddChild(_summaryScroll);
 
-            _optionHintLabel = CreateLabel(new Vector2(104f, 564f), new Vector2(724f, 96f), 28, HorizontalAlignment.Left);
+            _summaryLabel = CreateLabel(Vector2.Zero, new Vector2(724f, 430f), 34, HorizontalAlignment.Left);
+            _summaryLabel.VerticalAlignment = VerticalAlignment.Top;
+            _summaryScroll.AddChild(_summaryLabel);
+
+            _optionHintLabel = CreateLabel(new Vector2(104f, 596f), new Vector2(724f, 104f), 28, HorizontalAlignment.Left);
+            _optionHintLabel.VerticalAlignment = VerticalAlignment.Top;
             _panel.AddChild(_optionHintLabel);
 
             for (var index = 0; index < _optionButtons.Length; index++)
             {
                 var button = new Button
                 {
-                    Position = new Vector2(104f, 692f + index * 152f),
-                    Size = new Vector2(724f, 124f),
+                    Position = new Vector2(104f, 736f + index * 154f),
+                    Size = new Vector2(724f, 132f),
                     ClipText = true,
                     Alignment = HorizontalAlignment.Left,
                     Text = string.Empty

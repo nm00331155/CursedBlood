@@ -5,7 +5,7 @@ namespace CursedBlood.UI
 {
     public partial class ProtagonistSelectScreen : CanvasLayer
     {
-        private static readonly Vector2 PanelDesignPosition = new(60f, 92f);
+        private static readonly Vector2 PanelDesignSize = new(960f, 1600f);
 
         private static readonly string[] MaleNames = { "アキラ", "ハヤト", "ソウマ", "レン", "トウマ", "ユウト" };
         private static readonly string[] FemaleNames = { "ユイ", "ミオ", "リン", "サクラ", "ナギサ", "ヒナ" };
@@ -16,10 +16,15 @@ namespace CursedBlood.UI
         private string _selectedGender = "男";
         private ColorRect _background;
         private Panel _panel;
+        private Label _titleLabel;
+        private Label _subtitleLabel;
         private Button _maleCard;
         private Button _femaleCard;
+        private Label _nameLabel;
         private LineEdit _nameEdit;
+        private Button _randomButton;
         private Button _confirmButton;
+        private Button _cancelButton;
 
         public event Action<string, string> Confirmed;
 
@@ -57,7 +62,30 @@ namespace CursedBlood.UI
             }
 
             CanvasLayoutHelper.StretchOverlay(this, _background);
-            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+            var panelRect = CanvasLayoutHelper.ResolveCenteredPanelRect(this, PanelDesignSize, 0.90f, 0.90f, 36f, 40f);
+            _panel.Position = panelRect.Position;
+            _panel.Size = panelRect.Size;
+
+            var scale = CanvasLayoutHelper.GetScaleFactors(panelRect.Size, PanelDesignSize);
+            CanvasLayoutHelper.ApplyScaledLayout(_titleLabel, new Vector2(90f, 42f), new Vector2(780f, 72f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_subtitleLabel, new Vector2(112f, 118f), new Vector2(736f, 64f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_maleCard, new Vector2(86f, 246f), new Vector2(352f, 560f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_femaleCard, new Vector2(522f, 246f), new Vector2(352f, 560f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_nameLabel, new Vector2(118f, 904f), new Vector2(220f, 44f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_nameEdit, new Vector2(118f, 958f), new Vector2(500f, 70f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_randomButton, new Vector2(638f, 958f), new Vector2(200f, 70f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_confirmButton, new Vector2(252f, 1160f), new Vector2(456f, 96f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_cancelButton, new Vector2(252f, 1276f), new Vector2(456f, 78f), scale);
+
+            _titleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(56, scale, 30, 78));
+            _subtitleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 16, 40));
+            _maleCard.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 20, 50));
+            _femaleCard.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 20, 50));
+            _nameLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(30, scale, 18, 40));
+            _nameEdit.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 18, 40));
+            _randomButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(24, scale, 14, 34));
+            _confirmButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 22, 50));
+            _cancelButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(24, scale, 14, 34));
         }
 
         private void BuildUiIfNeeded()
@@ -77,8 +105,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = PanelDesignPosition,
-                Size = new Vector2(960f, 1600f)
+                Position = Vector2.Zero,
+                Size = PanelDesignSize
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -96,13 +124,13 @@ namespace CursedBlood.UI
             _panel.AddThemeStyleboxOverride("panel", panelStyle);
             AddChild(_panel);
 
-            var title = CreateLabel(new Vector2(90f, 42f), new Vector2(780f, 72f), 56, HorizontalAlignment.Center);
-            title.Text = "主人公選択";
-            _panel.AddChild(title);
+            _titleLabel = CreateLabel(new Vector2(90f, 42f), new Vector2(780f, 72f), 56, HorizontalAlignment.Center);
+            _titleLabel.Text = "主人公選択";
+            _panel.AddChild(_titleLabel);
 
-            var sub = CreateLabel(new Vector2(112f, 118f), new Vector2(736f, 64f), 28, HorizontalAlignment.Center);
-            sub.Text = "立ち絵未実装のため、仮カードで表示しています。";
-            _panel.AddChild(sub);
+            _subtitleLabel = CreateLabel(new Vector2(112f, 118f), new Vector2(736f, 64f), 28, HorizontalAlignment.Center);
+            _subtitleLabel.Text = "立ち絵未実装のため、仮カードで表示しています。";
+            _panel.AddChild(_subtitleLabel);
 
             _maleCard = CreateCardButton(new Vector2(86f, 246f), "男\n仮立ち絵\nPlaceholder");
             _maleCard.Pressed += () =>
@@ -120,9 +148,9 @@ namespace CursedBlood.UI
             };
             _panel.AddChild(_femaleCard);
 
-            var nameLabel = CreateLabel(new Vector2(118f, 904f), new Vector2(220f, 44f), 30, HorizontalAlignment.Left);
-            nameLabel.Text = "名前";
-            _panel.AddChild(nameLabel);
+            _nameLabel = CreateLabel(new Vector2(118f, 904f), new Vector2(220f, 44f), 30, HorizontalAlignment.Left);
+            _nameLabel.Text = "名前";
+            _panel.AddChild(_nameLabel);
 
             _nameEdit = new LineEdit
             {
@@ -134,19 +162,19 @@ namespace CursedBlood.UI
             _nameEdit.TextChanged += _ => UpdateConfirmEnabled();
             _panel.AddChild(_nameEdit);
 
-            var randomButton = new Button
+            _randomButton = new Button
             {
                 Position = new Vector2(638f, 958f),
                 Size = new Vector2(200f, 70f),
                 Text = "ランダム"
             };
-            randomButton.AddThemeFontSizeOverride("font_size", 24);
-            randomButton.Pressed += () =>
+            _randomButton.AddThemeFontSizeOverride("font_size", 24);
+            _randomButton.Pressed += () =>
             {
                 _nameEdit.Text = CreateRandomName(_selectedGender);
                 UpdateConfirmEnabled();
             };
-            _panel.AddChild(randomButton);
+            _panel.AddChild(_randomButton);
 
             _confirmButton = new Button
             {
@@ -158,15 +186,15 @@ namespace CursedBlood.UI
             _confirmButton.Pressed += () => Confirmed?.Invoke(_selectedGender, _nameEdit.Text.Trim());
             _panel.AddChild(_confirmButton);
 
-            var cancelButton = new Button
+            _cancelButton = new Button
             {
                 Position = new Vector2(252f, 1276f),
                 Size = new Vector2(456f, 78f),
                 Text = "戻る"
             };
-            cancelButton.AddThemeFontSizeOverride("font_size", 24);
-            cancelButton.Pressed += () => CancelRequested?.Invoke(_returnToHub);
-            _panel.AddChild(cancelButton);
+            _cancelButton.AddThemeFontSizeOverride("font_size", 24);
+            _cancelButton.Pressed += () => CancelRequested?.Invoke(_returnToHub);
+            _panel.AddChild(_cancelButton);
 
             _built = true;
             UpdateConfirmEnabled();

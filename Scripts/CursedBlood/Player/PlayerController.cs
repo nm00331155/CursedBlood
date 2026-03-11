@@ -126,7 +126,6 @@ namespace CursedBlood.Player
         public override void _Ready()
         {
             EnsureVisualController();
-            EnsureVirtualPad();
             SetProcess(true);
         }
 
@@ -230,7 +229,6 @@ namespace CursedBlood.Player
         public void Reset()
         {
             EnsureVisualController();
-            EnsureVirtualPad();
             _moveDirection = Vector2I.Down;
             _bufferedDirection = Vector2I.Zero;
             _moveTargetGrid = Vector2I.Zero;
@@ -243,7 +241,7 @@ namespace CursedBlood.Player
             _isMoving = false;
             _wasGuarding = false;
             _movementPaused = false;
-            _stopRequested = false;
+            _stopRequested = true;
             AllowNeutralStop = true;
             ContextSlowdownMultiplier = 1f;
             _lastPlayerSize = Stats?.PlayerSize ?? 3;
@@ -283,13 +281,12 @@ namespace CursedBlood.Player
             _pointerMoved = false;
             _touchGuarding = false;
             _pointerHoldTime = 0f;
-            _stopRequested = false;
+            _stopRequested = true;
             VirtualPad?.End();
         }
 
         public void ApplyVirtualPadSettings(VirtualPadSettings settings)
         {
-            EnsureVirtualPad();
             VirtualPad?.ApplySettings(settings);
         }
 
@@ -524,6 +521,7 @@ namespace CursedBlood.Player
             _moveTimer = 0f;
             _currentMoveDuration = Stats.ResolveMoveDuration(maxHardness, requiresDig, ContextSlowdownMultiplier);
             _isMoving = true;
+            Stats.BeginDive();
             _moveDebugInfo.AllowMove();
             return true;
         }
@@ -847,18 +845,16 @@ namespace CursedBlood.Player
         {
             if (pressed)
             {
-                if (VirtualPad != null && !VirtualPad.CanBeginAt(position))
-                {
-                    return;
-                }
-
+                var useVirtualPad = VirtualPad != null && VirtualPad.CanBeginAt(position);
                 _pointerActive = true;
                 _pointerMoved = false;
                 _touchGuarding = false;
                 _pointerHoldTime = 0f;
                 _pointerStart = position;
-                _stopRequested = false;
-                VirtualPad?.Begin(position);
+                if (useVirtualPad)
+                {
+                    VirtualPad?.Begin(position);
+                }
             }
             else
             {

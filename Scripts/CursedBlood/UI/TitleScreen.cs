@@ -6,7 +6,7 @@ namespace CursedBlood.UI
 {
     public partial class TitleScreen : CanvasLayer
     {
-        private static readonly Vector2 PanelDesignPosition = new(78f, 180f);
+        private static readonly Vector2 PanelDesignSize = new(924f, 1320f);
 
         private bool _built;
         private ColorRect _background;
@@ -16,6 +16,7 @@ namespace CursedBlood.UI
         private Label _summaryLabel;
         private Button _primaryButton;
         private Button _profileButton;
+        private Label _noteLabel;
 
         public event Action PrimaryRequested;
 
@@ -55,7 +56,24 @@ namespace CursedBlood.UI
             }
 
             CanvasLayoutHelper.StretchOverlay(this, _background);
-            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+            var panelRect = CanvasLayoutHelper.ResolveCenteredPanelRect(this, PanelDesignSize, 0.88f, 0.84f, 40f, 48f);
+            _panel.Position = panelRect.Position;
+            _panel.Size = panelRect.Size;
+
+            var scale = CanvasLayoutHelper.GetScaleFactors(panelRect.Size, PanelDesignSize);
+            CanvasLayoutHelper.ApplyScaledLayout(_titleLabel, new Vector2(72f, 72f), new Vector2(780f, 96f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_subtitleLabel, new Vector2(92f, 188f), new Vector2(740f, 72f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_summaryLabel, new Vector2(118f, 380f), new Vector2(690f, 270f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_primaryButton, new Vector2(242f, 920f), new Vector2(440f, 108f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_profileButton, new Vector2(242f, 1056f), new Vector2(440f, 82f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_noteLabel, new Vector2(112f, 1128f), new Vector2(700f, 150f), scale);
+
+            _titleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(84, scale, 42, 108));
+            _subtitleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 20, 52));
+            _summaryLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(34, scale, 18, 46));
+            _primaryButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(40, scale, 24, 56));
+            _profileButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(30, scale, 18, 42));
+            _noteLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 16, 38));
         }
 
         private void BuildUiIfNeeded()
@@ -75,8 +93,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = PanelDesignPosition,
-                Size = new Vector2(924f, 1320f)
+                Position = Vector2.Zero,
+                Size = PanelDesignSize
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -103,6 +121,7 @@ namespace CursedBlood.UI
             _panel.AddChild(_subtitleLabel);
 
             _summaryLabel = CreateLabel(new Vector2(118f, 380f), new Vector2(690f, 270f), 34, HorizontalAlignment.Left);
+            _summaryLabel.VerticalAlignment = VerticalAlignment.Top;
             _panel.AddChild(_summaryLabel);
 
             _primaryButton = new Button
@@ -125,9 +144,10 @@ namespace CursedBlood.UI
             _profileButton.Pressed += () => ProfileRequested?.Invoke();
             _panel.AddChild(_profileButton);
 
-            var noteLabel = CreateLabel(new Vector2(112f, 1220f), new Vector2(700f, 150f), 28, HorizontalAlignment.Left);
-            noteLabel.Text = "現在の実装範囲: タイトル → 主人公選択 → 拠点 → 潜行 → 結果 → 借金精算 → 拠点\n装備・研究・実績・ランキングは拠点内で仮配置です。";
-            _panel.AddChild(noteLabel);
+            _noteLabel = CreateLabel(new Vector2(112f, 1128f), new Vector2(700f, 150f), 28, HorizontalAlignment.Left);
+            _noteLabel.VerticalAlignment = VerticalAlignment.Top;
+            _noteLabel.Text = "現在の実装範囲: タイトル → 主人公選択 → 拠点 → 潜行 → 結果 → 借金精算 → 拠点\n装備・研究・実績・ランキングは拠点内で仮配置です。";
+            _panel.AddChild(_noteLabel);
 
             _built = true;
             ApplyViewportLayout();

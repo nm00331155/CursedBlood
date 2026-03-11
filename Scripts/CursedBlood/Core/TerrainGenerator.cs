@@ -117,17 +117,17 @@ namespace CursedBlood.Core
         private static bool IsInsideStartPocket(int col, int row)
         {
             var dx = Mathf.Abs(col - PlayerStats.StartGridPosition.X);
-            if (row < PlayerStats.SurfaceRow || row > PlayerStats.StartGridPosition.Y + 8)
+            if (row < PlayerStats.SurfaceRow || row > PlayerStats.StartGridPosition.Y + 2)
             {
                 return false;
             }
 
-            if (dx <= 9 && row <= PlayerStats.StartGridPosition.Y + 4)
+            if (dx <= 7 && row <= PlayerStats.SurfaceRow + 1)
             {
                 return true;
             }
 
-            return dx <= 5 && row <= PlayerStats.StartGridPosition.Y + 8;
+            return dx <= 3 && row <= PlayerStats.StartGridPosition.Y + 2;
         }
 
         private float FractalNoise(float x, float y, int octaves, float lacunarity, float gain, int salt)

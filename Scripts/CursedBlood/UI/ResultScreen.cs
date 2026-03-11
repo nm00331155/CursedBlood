@@ -6,13 +6,14 @@ namespace CursedBlood.UI
 {
     public partial class ResultScreen : CanvasLayer
     {
-        private static readonly Vector2 PanelDesignPosition = new(80f, 190f);
+        private static readonly Vector2 PanelDesignSize = new(920f, 1260f);
 
         private bool _built;
         private ColorRect _overlay;
         private Panel _panel;
         private Label _titleLabel;
         private Label _resultLabel;
+        private ScrollContainer _summaryScroll;
         private Label _summaryLabel;
         private Label _hintLabel;
         private Button _continueButton;
@@ -34,6 +35,7 @@ namespace CursedBlood.UI
             ApplyViewportLayout();
             _resultLabel.Text = result.OutcomeLabel;
             _summaryLabel.Text = result.BuildSummaryText();
+            CanvasLayoutHelper.UpdateScrollableLabelContent(_summaryLabel, _summaryScroll);
             SetScreenVisible(true);
         }
 
@@ -50,7 +52,23 @@ namespace CursedBlood.UI
             }
 
             CanvasLayoutHelper.StretchOverlay(this, _overlay);
-            CanvasLayoutHelper.CenterFromReference(this, _panel, PanelDesignPosition);
+            var panelRect = CanvasLayoutHelper.ResolveCenteredPanelRect(this, PanelDesignSize, 0.88f, 0.84f, 40f, 48f);
+            _panel.Position = panelRect.Position;
+            _panel.Size = panelRect.Size;
+
+            var scale = CanvasLayoutHelper.GetScaleFactors(panelRect.Size, PanelDesignSize);
+            CanvasLayoutHelper.ApplyScaledLayout(_titleLabel, new Vector2(70f, 48f), new Vector2(780f, 72f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_resultLabel, new Vector2(70f, 132f), new Vector2(780f, 46f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_summaryScroll, new Vector2(100f, 242f), new Vector2(720f, 694f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_hintLabel, new Vector2(70f, 972f), new Vector2(780f, 80f), scale);
+            CanvasLayoutHelper.ApplyScaledLayout(_continueButton, new Vector2(258f, 1108f), new Vector2(404f, 96f), scale);
+
+            _titleLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(60, scale, 34, 86));
+            _resultLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 20, 54));
+            _summaryLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 20, 52));
+            _hintLabel.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(28, scale, 16, 40));
+            _continueButton.AddThemeFontSizeOverride("font_size", CanvasLayoutHelper.ScaleFont(36, scale, 22, 52));
+            CanvasLayoutHelper.UpdateScrollableLabelContent(_summaryLabel, _summaryScroll);
         }
 
         public override void _UnhandledInput(InputEvent @event)
@@ -98,8 +116,8 @@ namespace CursedBlood.UI
 
             _panel = new Panel
             {
-                Position = PanelDesignPosition,
-                Size = new Vector2(920f, 1260f)
+                Position = Vector2.Zero,
+                Size = PanelDesignSize
             };
             var panelStyle = new StyleBoxFlat
             {
@@ -124,16 +142,24 @@ namespace CursedBlood.UI
             _resultLabel = CreateLabel(new Vector2(70f, 132f), new Vector2(780f, 46f), 36, HorizontalAlignment.Center);
             _panel.AddChild(_resultLabel);
 
-            _summaryLabel = CreateLabel(new Vector2(100f, 242f), new Vector2(720f, 660f), 40, HorizontalAlignment.Left);
-            _panel.AddChild(_summaryLabel);
+            _summaryScroll = new ScrollContainer
+            {
+                Position = new Vector2(100f, 242f),
+                Size = new Vector2(720f, 694f)
+            };
+            _panel.AddChild(_summaryScroll);
 
-            _hintLabel = CreateLabel(new Vector2(70f, 1010f), new Vector2(780f, 76f), 28, HorizontalAlignment.Center);
+            _summaryLabel = CreateLabel(Vector2.Zero, new Vector2(720f, 694f), 36, HorizontalAlignment.Left);
+            _summaryLabel.VerticalAlignment = VerticalAlignment.Top;
+            _summaryScroll.AddChild(_summaryLabel);
+
+            _hintLabel = CreateLabel(new Vector2(70f, 972f), new Vector2(780f, 80f), 28, HorizontalAlignment.Center);
             _hintLabel.Text = "タップ / クリック / キー入力で返済画面へ";
             _panel.AddChild(_hintLabel);
 
             _continueButton = new Button
             {
-                Position = new Vector2(258f, 1114f),
+                Position = new Vector2(258f, 1108f),
                 Size = new Vector2(404f, 96f),
                 Text = "返済画面へ"
             };

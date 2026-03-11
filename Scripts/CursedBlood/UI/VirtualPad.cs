@@ -6,9 +6,9 @@ namespace CursedBlood.UI
     {
         public float BaseOpacity { get; set; } = 0.30f;
 
-        public float InactiveBaseOpacity { get; set; } = 0.12f;
+        public float InactiveBaseOpacity { get; set; } = 0.22f;
 
-        public float KnobOpacity { get; set; } = 0.72f;
+        public float KnobOpacity { get; set; } = 0.82f;
 
         public float DeadZoneRadius { get; set; } = 28f;
 

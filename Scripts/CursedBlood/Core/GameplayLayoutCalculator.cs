@@ -28,18 +28,19 @@ namespace CursedBlood.Core
         public static readonly Vector2 ReferenceScreenSize = new(1080f, 1920f);
 
         private const float InfoPanelTop = 18f;
-        private const float InfoPanelHeight = 188f;
+        private const float InfoPanelMinimumHeight = 188f;
         private const float InfoPanelBottomPadding = 12f;
         private const float MapPanelRightMargin = 18f;
-        private const float MapPanelFramePadding = 24f;
+        private const float MapPanelWidthPadding = 24f;
+        private const float MapPanelHeaderHeight = 54f;
         private const float SonarPanelTop = 1586f;
         private const float ReturnPanelHeight = 172f;
         private const float ReturnPanelBottomMargin = 76f;
 
         public static GameplayLayoutMetrics Calculate(Rect2 visibleRect, Vector2 minimapSize)
         {
-            var reservedTop = InfoPanelTop + InfoPanelHeight + InfoPanelBottomPadding;
-            var reservedRight = MapPanelRightMargin + Mathf.Max(180f, minimapSize.X) + MapPanelFramePadding;
+            var reservedTop = InfoPanelTop + ResolveTopOverlayHeight(minimapSize) + InfoPanelBottomPadding;
+            var reservedRight = MapPanelRightMargin + Mathf.Max(180f, minimapSize.X) + MapPanelWidthPadding;
             var reservedBottom = Mathf.Max(
                 ReferenceScreenSize.Y - SonarPanelTop,
                 ReturnPanelBottomMargin + ReturnPanelHeight);
@@ -67,6 +68,18 @@ namespace CursedBlood.Core
                 cameraFocusOffsetPixels);
         }
 
+        public static float ResolveTopOverlayHeight(Vector2 minimapSize)
+        {
+            return Mathf.Max(InfoPanelMinimumHeight, ResolveMapPanelSize(minimapSize).Y);
+        }
+
+        public static Vector2 ResolveMapPanelSize(Vector2 minimapSize)
+        {
+            return new Vector2(
+                Mathf.Max(180f, minimapSize.X) + MapPanelWidthPadding,
+                Mathf.Max(160f, minimapSize.Y) + MapPanelHeaderHeight);
+        }
+
         public static GameplayProjectionMetrics ResolveProjection(GameplayLayoutMetrics layout, float baseZoomScale)
         {
             var clampedBaseZoom = Mathf.Clamp(baseZoomScale, 0.18f, 1.0f);
@@ -76,15 +89,15 @@ namespace CursedBlood.Core
                 layout.AvailableSize.Y / Mathf.Max(1f, logicalWorldSize.Y));
             renderScale = Mathf.Max(0.01f, renderScale);
 
-            var renderSize = logicalWorldSize * renderScale;
-            var cameraZoomScale = Mathf.Clamp(1f / renderScale, 0.18f, 1.0f);
+            var cameraZoomScale = Mathf.Clamp(renderScale, 0.35f, 6.0f);
+            var renderSize = logicalWorldSize * cameraZoomScale;
 
             return new GameplayProjectionMetrics(logicalWorldSize, renderScale, renderSize, cameraZoomScale);
         }
 
         public static Vector2 ResolveCameraWorldOffset(GameplayLayoutMetrics layout, float cameraZoomScale)
         {
-            return -layout.CameraFocusOffsetPixels * cameraZoomScale;
+            return -layout.CameraFocusOffsetPixels / Mathf.Max(0.01f, cameraZoomScale);
         }
 
         public static Vector2 ResolveVirtualPadOrigin(GameplayLayoutMetrics layout, Vector2 designOrigin)
